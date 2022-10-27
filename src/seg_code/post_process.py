@@ -63,7 +63,6 @@ def plot_with_layer(rnfl_path, axes=None):
         fig.savefig('figure.png', bbox_inches='tight', facecolor='w')
 
 def main():
-    # RNFL_masks = pd.Series([p for p in Path('RNFL_masks/').rglob('*.jpg')])
     ILM_masks = pd.Series([str(p) for p in Path('ILM_masks/').rglob('*.jpg')])
     ILM_masks = ILM_masks[~ILM_masks.str.contains('ipynb_checkpoints')]
     

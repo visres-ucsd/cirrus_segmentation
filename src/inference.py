@@ -8,73 +8,41 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 import argparse
+import itertools
 
-MODEL_TYPE = 'ILM'
+def chunked_iterable(iterable, size):
+    it = iter(iterable)
+    while True:
+        chunk = tuple(itertools.islice(it, size))
+        if not chunk:
+            break
+        yield chunk
 
-def seg_scan_dir(scan_dir):
-    scan = scan_dir.name
-    pt_id = scan_dir.parent.name
-    group = scan_dir.parent.parent.name
-    out_path = os.path.join(f"{MODEL_TYPE}_masks", group, pt_id, scan)
+def gen_out_name(jpg_path, outdir):
     
-    predict_multiple(
-        model=model, 
-        inp_dir=str(scan_dir), 
-        out_dir=out_path
-    )
-
-# for scan_dir in tqdm(scan_dirs):
-#     seg_scan_dir(scan_dir)
-
-# def seg_jpg(jpg_path):
-#     scan = jpg_path.parent.name
-#     pt_id = jpg_path.parent.parent.name
-#     group = jpg_path.parent.parent.parent.name
-#     out_path = os.path.join("RNFL_masks", group, pt_id, scan, jpg_path.name)
-    
-#     # dout = model.predict_segmentation(inp=str(jpg_path), out_fname=out_path)
-    
-#     predict( 
-#         model=model, 
-#         inp=str(jpg_path), 
-#         out_fname=out_path
-#     )
-
-# for file in tqdm(files):
-#     seg_jpg(file)
-
-def gen_out_name(jpg_path):
-    '''Generates the output path for an image.'''
-    scan = jpg_path.parent.name
-    pt_id = jpg_path.parent.parent.name
-    group = jpg_path.parent.parent.parent.name
-    out_path = os.path.join(f"{MODEL_TYPE}_masks", group, pt_id, scan, jpg_path.name)
+    parts = list(jpg_path.parts)
+    parts[0] = outdir
+    out_path = os.path.join(*parts)
     
     return out_path
 
 def dir_batch_predict(model, inp_dir=None):
     jpgs = [i for i in inp_dir.glob('*.jpg')]
+    
     batch_predict(model, jpgs)
     
 
-def batch_predict(model, jpgs, checkpoints_path=None, overlay_img=False,
+def batch_predict(model, jpgs, outdir, checkpoints_path=None, overlay_img=False,
                   class_names=None, show_legends=False, colors=class_colors,
                   prediction_width=None, prediction_height=None,
                   read_image_type=1):
-    '''
-    Predicts segmentation of a batch of images. Writes output to file.
-
-    @param model: keras segmnetation model
-    @param jpgs: list of images to predict
-    @returns: None
-    '''
     output_width = model.output_width
     output_height = model.output_height
     input_width = model.input_width
     input_height = model.input_height
     n_classes = model.n_classes
     
-    out_paths = [gen_out_name(jpg_path) for jpg_path in jpgs]
+    out_paths = [gen_out_name(jpg_path, outdir) for jpg_path in jpgs]
     if Path(out_paths[0]).exists():
         return
         
@@ -85,7 +53,6 @@ def batch_predict(model, jpgs, checkpoints_path=None, overlay_img=False,
     pr = pr.reshape((len(jpgs), output_height,  output_width, n_classes)).argmax(axis=3)
     
     for arr, out_fname in zip(pr, out_paths):
-        # seg_img = visualize_segmentation(arr, x[0], n_classes=n_classes, # previously incorrect
         seg_img = visualize_segmentation(arr, inp_example, n_classes=n_classes,
                                      colors=colors, overlay_img=overlay_img,
                                      show_legends=show_legends,
@@ -99,23 +66,42 @@ def batch_predict(model, jpgs, checkpoints_path=None, overlay_img=False,
     
         
 def main():
-    global MODEL_TYPE
+    global OUT_DIR
     parser = argparse.ArgumentParser()
+    parser.add_argument('rnfl_model_weights')
+    parser.add_argument('ilm_model_weights')
     parser.add_argument('png_dir')
-    parser.add_argument('model_type')
+    parser.add_argument('outdir')
+    parser.add_argument('--nested', action='store_true')
     args = parser.parse_args()
 
     path = args.png_dir
-    MODEL_TYPE = args.model_type
-
-    model = vgg_unet(n_classes=2,  input_height=416, input_width=608  )
-    model.load_weights(f"{MODEL_TYPE}25/{MODEL_TYPE}.00025")
     
-    files = [i for i in Path(path).rglob('*.jpg')]
-    scan_dirs = [i for i in Path('CirrusPNGs').glob('*/*/*')]
+    rnfl_model = vgg_unet(n_classes=2,  input_height=416, input_width=608)
+    rnfl_model.load_weights(args.rnfl_model_weights)
     
-    for scan_dir in tqdm(scan_dirs):
-        dir_batch_predict(model=model, inp_dir=scan_dir)
+    ilm_model = vgg_unet(n_classes=2,  input_height=416, input_width=608)
+    ilm_model.load_weights(args.ilm_model_weights)
+    
+    ilm_outdir = os.path.join(args.outdir, 'ILM')
+    rnfl_outdir = os.path.join(args.outdir, 'RNFL')
+    
+    if args.nested:
+        scan_dirs = [i for i in Path(path).glob('*/*/*')]
+        for scan_dir in tqdm(scan_dirs):
+            jpgs = [i for i in scan_dir.glob('*.jpg')]
+            if Path(gen_out_name(jpgs[0], rnfl_outdir)).exists(): # skip existing dirs
+                continue
+            else:
+                dir_batch_predict(model=rnfl_model, inp_dir=scan_dir, outdir=rnfl_outdir)
+                dir_batch_predict(model=ilm_model, inp_dir=scan_dir, outdir=ilm_outdir)
+    else:
+        files = [i for i in Path(path).rglob('*.jpg')]
+        batch_size = 400
+        for batch in tqdm(list(chunked_iterable(files, size=batch_size))):
+            batch_predict(rnfl_model, batch, outdir=rnfl_outdir)
+            batch_predict(ilm_model, batch, outdir=ilm_outdir)
+    
         
 if __name__=='__main__':
     main()

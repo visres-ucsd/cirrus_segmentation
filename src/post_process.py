@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from skimage.measure import label
 from skimage import morphology
-# from Loess import Loess
 import argparse
 import scipy
 
@@ -33,14 +32,6 @@ def imclose(img_arr, kernel_size):
     closed = cv2.morphologyEx(img_arr, cv2.MORPH_CLOSE, kernel)
     return closed
 
-# def loess_smoothing(series):
-#     '''Performs LOESS smoothing on a pandas Series.'''
-#     estimator = Loess(series.index, series.values)
-#     window = int(series.size * .05)
-#     pred = pd.Series([estimator.estimate(x, window) for x in series.index])
-#     pred.index = series.index
-#     return pred
-
 def morph_operations(img_arr):
     '''Performs morphological operations on masks to remove noise.'''
     # img_arr = imclose(img_arr.astype(np.uint8), kernel_size=(5,5)) # connect close components
@@ -50,11 +41,9 @@ def morph_operations(img_arr):
 
 def compute_top_layer(img_arr):
     img_arr = bool_mask(img_arr)
-    # img_arr = getLargestCC(img_arr)
     img_arr = morph_operations(img_arr)
     rows, columns = np.where(img_arr)
     top_layer_idxs = pd.DataFrame({'row': rows, 'column': columns}).groupby('column').row.min()
-    # top_layer_idxs = loess_smoothing(top_layer_idxs)
     return top_layer_idxs
 
 def compute_reference_layer(img):
@@ -127,7 +116,6 @@ def process_mask_dir(ILM_mask_dir):
     # build layer dfs
     RNFL_df = pd.concat(RNFL_layers, axis=1).T.sort_index().sort_index(axis=1)
     ILM_df = pd.concat(ILM_layers, axis=1).T.sort_index().sort_index(axis=1)
-    # thickness_df = pd.concat(thickness_values, axis=1).T.sort_index().sort_index(axis=1)
     thickness_df = surface_smoothing(RNFL_df) - surface_smoothing(ILM_df)
     thickness_df = thickness_df[thickness_df>=0]
 
@@ -163,29 +151,6 @@ def main():
         ILM_mask_dirs = pd.read_csv(args.mask_dir_list, names=['dirs']).dirs
     
     p_map(process_mask_dir, ILM_mask_dirs)
-    # RNFL_masks = pd.Series([p for p in Path('RNFL_masks/').rglob('*.jpg')])
-    # ILM_masks = pd.Series([str(p) for p in Path('ILM_masks/').rglob('*.jpg')])
-    # ILM_masks = pd.Series([str(p) for p in Path('sample_scans/').rglob('*.jpg')])
-    # ILM_masks = ILM_masks.str.replace('sample_scans', 'ILM_masks')
-    # ILM_masks = ILM_masks[~ILM_masks.str.contains('ipynb_checkpoints')]
-    
-    # csv_exists = Path('RNFL_thickness.csv').exists()
-    
-    # if csv_exists:
-    #     processed_items = pd.read_csv(
-    #         'RNFL_thickness.csv',
-    #         names=['filepath', 'thickness'],
-    #         skiprows=1
-    #     ).set_index('filepath').thickness
-
-    #     # remove processed items
-    #     ILM_masks = ILM_masks[~ILM_masks.isin(processed_items.index)]
-    
-    # RNFL_thickness_vals = p_map(get_RNFL_thickness, ILM_masks)
-    # RNFL_thickness_vals = pd.Series(RNFL_thickness_vals, index=ILM_masks)
-    # use_header = not csv_exists
-    # mode = 'a' if csv_exists else 'w'
-    # RNFL_thickness_vals.to_csv('RNFL_thickness.csv', header=use_header, mode=mode)
     
     
 if __name__=='__main__':
