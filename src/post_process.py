@@ -9,10 +9,37 @@ from skimage.measure import label
 from skimage import morphology
 import argparse
 import scipy
+import base64
+import json
 
 MASK_RGB = np.array([133, 248, 208])
 DIST_THRESHOLD = 5000
 EXPECTED_SHAPE = (384, 496)
+MICRONS_PER_PIXEL = 2000. / 1024.#3.3
+VERT_SCALE = (1024./496.)
+
+def image_to_base64(img_arr):
+    '''
+    Converts image to a base64 string with JPG encoding.
+    '''
+    img_arr = img_arr.copy()
+    img_arr[np.isnan(img_arr)] = img_arr.max()
+    
+    temp_im_file = 'temp/img_to_str.png'
+    cv2.imwrite(temp_im_file, img_arr)
+    with open(temp_im_file, 'rb') as image_file:
+        data = image_file.read()
+    data = base64.b64encode(data).decode('utf-8')
+    return data
+
+def read_img_base64(img_str):
+    '''
+    Loads an image saved as a base64 string.
+    '''
+    jpg_data = base64.b64decode(img_str)
+    jpg_as_np = np.frombuffer(jpg_data, dtype=np.uint8)
+    img = cv2.imdecode(jpg_as_np, flags=0)
+    return img
 
 def bool_mask(img_arr):
     dist = (img_arr - MASK_RGB).sum(axis=2)**2
@@ -139,42 +166,51 @@ def get_projection_image(img_data):
     projection_image = img_data.mean(axis=1)
     return projection_image
 
-def get_slab_image(img_data, surface_data_path):
+def get_slab_image(img_data, ilm_surface_df):
+    slab_width_microns = 52
+    slab_width = np.ceil(slab_width_microns / MICRONS_PER_PIXEL)
+
     # copy array
-    slab_array = np.full(rnfl_surface.shape, np.nan)
+    slab_array = np.full(ilm_surface_df.shape, np.nan)
 
     # loop through x, y coords
     for x in range(0,200):
         for y in range(0,200):
             # at each x, y set values outside of slab to nan
-            ilm_idx = ilm_surface.values[x,y]
+            ilm_idx = ilm_surface_df.values[x,y]
             if np.isnan(ilm_idx):
                 continue
 
             # slice slab and take mean
             z_idxs = np.arange(0,1024)
-            inside_slab = np.logical_and((z_idxs >= ilm_idx), (z_idxs <= ilm_idx + slab_width))
-            slab_array[x, y] = test_img[x, ~inside_slab, y].mean()
+            z_idxs = z_idxs * -1 - 1
+            ilm_idx *= -1
+            inside_slab = np.logical_and((z_idxs <= ilm_idx), (z_idxs >= ilm_idx - slab_width))
+            z_idxs = z_idxs[inside_slab]
+            # if x==0 and y==0: print(ilm_idx, inside_slab.sum()) # debug
+            slab_array[x, y] = img_data[x, z_idxs, y].mean()
     return slab_array
 
 EN_FACE_PIX_RESOLUTION = (200/6.) # 200px/6mm
-BASE_DIAM = 3.46 * EN_FACE_PIX_RESOLUTION
+BASE_DIAM = 3.46 * EN_FACE_PIX_RESOLUTION # 3.46mm in px
+# BASE_DIAM = 3.5 * EN_FACE_PIX_RESOLUTION
+# BASE_DIAM = 180
 OUTER_RADIUS = (BASE_DIAM + (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 INNER_RADIUS = (BASE_DIAM - (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 
-def derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
-    onh_center = np.array(onh_center)
+def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
+    print(f'{BASE_DIAM=}')
+    onh_center = np.array(onh_center).round()
 
-    point = np.array([100,100])
     coords = np.stack(np.meshgrid(range(200), range(200)), axis=2)
-    coord_diff = coords - point
+    coord_diff = coords - onh_center
     coord_dist = np.sqrt(np.sum((coord_diff)**2, axis=2))
     coord_mask = np.logical_and(INNER_RADIUS < coord_dist, coord_dist < OUTER_RADIUS)
     # plt.figure(figsize=(10,10))
     # plt.imshow(coord_mask)
 
-    # diameter 115px * pi (also converts to degrees easily)
-    anglular_resolution = 360
+    # diameter 115px * pi ~= 361
+    anglular_resolution = 360 # (also converts to degrees easily)
     coor_atan = np.arctan2(coord_diff[:,:,0], coord_diff[:,:,1])
     angle_bins = np.linspace(coor_atan.min(), coor_atan.max(), anglular_resolution)
     angles_binned = np.digitize(coor_atan, bins=angle_bins).astype(float) - 1
@@ -184,15 +220,16 @@ def derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
     # plt.imshow(angles_binned)
 
     # order bin_labels in TSNIT order
-    if mode=='OD':
+    if mode=='OS':
         bin_labels = np.flip((bin_labels + 90) % 360)
-    elif mode=='OS':
+    elif mode=='OD':
         bin_labels = (bin_labels - 90) % 360
+    print(f'{mode}: {bin_labels[0]}, {bin_labels[90]}, {bin_labels[180]}, {bin_labels[270]}')
 
     # debug print out of angular mappings, should follow:
     # OS: 270 --> 360/0 --> 90 --> 180 --> 270
     # OD: 90 --> 0/360 --> 270 --> 180 --> 90
-    print(pd.Series({k: v for k, v in enumerate(bin_labels)})[[0, 90, 180, 270, 359]])
+    # print(pd.Series({k: v for k, v in enumerate(bin_labels)})[[0, 90, 180, 270, 359]])
 
     # Take average across 
     der_circle_scan = []
@@ -209,31 +246,98 @@ def derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
         rnfl_values = np.array([rnfl_surface[y, x] for y, x in bin_coords])
         der_rnfl_surface[bin_idx] = np.nanmean(rnfl_values)
 
-    der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)
+    der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
     der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
-    der_ilm_surface = pd.Series(der_ilm_surface).dropna()
-    der_rnfl_surface = pd.Series(der_rnfl_surface).dropna()
+    der_ilm_surface = pd.Series(der_ilm_surface)
+    der_rnfl_surface = pd.Series(der_rnfl_surface)
 
     der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
     der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
     
-    plt.figure(figsize=(10,5))
-    plt.imshow(der_circle_scan, cmap='gray', aspect='auto')
+    # plt.figure(figsize=(10,5))
+    # plt.imshow(der_circle_scan, cmap='gray', aspect='auto')
 
-    ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
-    der_ilm_surface.plot(linewidth=1, color='cyan')
-    der_rnfl_surface.plot(linewidth=1, color='r')
+    # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
+    # der_ilm_surface.plot(linewidth=1, color='cyan')
+    # der_rnfl_surface.plot(linewidth=1, color='r')
 
     # set ticks to scale
-    xticks = np.array([0, 90, 180, 270, 360])
-    xticks_pos = xticks * (der_circle_scan.shape[1] / 360)
-    yticks = np.array([0, 1, 2, 3, 4, 5, 6])
-    yticks_pos = yticks * (der_circle_scan.shape[0] / 6)
-    plt.xticks(xticks_pos, ['T', 'S', 'N', 'I', 'T'])
-    plt.yticks(yticks_pos, yticks)
+    # xticks = np.array([0, 90, 180, 270, 360])
+    # xticks_pos = xticks * (der_circle_scan.shape[1] / 360)
+    # yticks = np.array([0, 1, 2, 3, 4, 5, 6])
+    # yticks_pos = yticks * (der_circle_scan.shape[0] / 6)
+    # plt.xticks(xticks_pos, ['T', 'S', 'N', 'I', 'T'])
+    # plt.yticks(yticks_pos, yticks)
 
-    plt.ylabel('Millimeters (mm)')
-    return der_circle_scan
+    # plt.ylabel('Millimeters (mm)')
+    return der_circle_scan, der_ilm_surface, der_rnfl_surface
+
+def find_onh_center(rnfl_thickness_mat):
+    rnfl_isna = np.isnan(rnfl_thickness_mat).astype(np.uint8)
+    ret, labels = cv2.connectedComponents(rnfl_isna)
+    center_component = labels == labels[99,99]
+    center_component = imclose(center_component.astype(np.uint8), (5,5)).astype(bool)
+    center_mean_y, center_mean_x = np.mean(np.where(center_component), axis=1)
+    return center_mean_y, center_mean_x
+
+def collect_json(img_path, savefig=False):
+    pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
+    scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
+
+    ilm_surface_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_ILM_location.csv')
+    rnfl_surface_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_RNFL_location.csv')
+    rnfl_thickness_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_RNFL_thickness.csv')
+    try: # try to match a comparison spectralis circle scan
+        # spectralis_raw_path = next(Path('raw-bscans').rglob(f'{pt_id[1:]}*bscan0024.tif'))
+        spectralis_raw_path = None
+    except StopIteration:
+        spectralis_raw_path = None
+
+    ilm_surface = pd.read_csv(ilm_surface_path, index_col=0)
+    rnfl_surface = pd.read_csv(rnfl_surface_path, index_col=0)
+    ilm_surface = (surface_smoothing(ilm_surface) * VERT_SCALE).round() 
+    rnfl_surface = (surface_smoothing(rnfl_surface) * VERT_SCALE).round()
+
+    rnfl_thickness_df = pd.read_csv(rnfl_thickness_path, index_col=0)
+    rnfl_thickness_df = rnfl_thickness_df * VERT_SCALE * MICRONS_PER_PIXEL
+
+    img_data = np.fromfile(img_path, dtype=np.uint8).reshape(200, 1024, 200)
+
+    proj_image = img_data.mean(axis=1)
+    slab_image = get_slab_image(img_data, ilm_surface)
+    
+    scan_center = find_onh_center(rnfl_thickness_df.values)
+    der_circle_scan, der_ilm_surface, der_rnfl_surface = make_derived_circle_scan(
+        img_data,
+        ilm_surface.values,
+        rnfl_surface.values,
+        scan_center,
+        scan_eye
+    )
+
+    json_dict = {
+        'img_path': str(img_path),
+        'pt_id': pt_id,
+        'scan_eye': scan_eye,
+        'scan_type': scan_type,
+        'scan_date': scan_date,
+        'scan_time': scan_time,
+        'scan_outname': scan_outname,
+        'scan_center': list(scan_center),
+        'derived_circle_scan': image_to_base64(der_circle_scan),
+        # 'derived_circle_scan_raw': der_circle_scan,
+        'derived_ilm_surface': der_ilm_surface.to_dict(),
+        'derived_rnfl_surface': der_rnfl_surface.to_dict(),
+        'projection_image': image_to_base64(proj_image),
+        'en_face_slab_image': image_to_base64(slab_image),
+        'rnfl_thickness_values': rnfl_thickness_df.values.tolist(),
+        'spectralis_raw_path': spectralis_raw_path
+    }
+
+    json_out_path = Path('data_wd/').joinpath('jsons', f'{scan_outname}.json')
+    with open(str(json_out_path), 'w') as json_handle:
+        json.dump(json_dict, json_handle)
+    return json_dict
 
 def main():
     '''

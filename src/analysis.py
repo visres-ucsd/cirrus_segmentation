@@ -1,11 +1,15 @@
 import pandas as pd
+import numpy as np
 import scipy
 import cv2
 import os
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator
 from pathlib import Path
-from src.post_process import EXPECTED_SHAPE, get_stitched_image, compute_top_layer, morph_operations
+from src.post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
+    BASE_DIAM, get_stitched_image, compute_top_layer, \
+    morph_operations, bool_mask, surface_smoothing, read_img_base64
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
     def get_ilm_rnfl_surfaces(path):
@@ -175,3 +179,169 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
         rnfl_fp = next(rnfl_fp)
     
     plot_LR_stitched(str(rnfl_fp), savefig=False, morph=morph)
+
+# def collect_all(img_path):
+#     pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
+#     scan_outname ='_'.join([pt_id+scan_eye, scan_date, scan_time])
+
+#     ilm_surface_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_ILM_location.csv')
+#     rnfl_surface_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_RNFL_location.csv')
+#     rnfl_thickness_path = Path('data_wd/layer_maps/').joinpath(scan_outname+'_RNFL_thickness.csv')
+
+#     ilm_surface = pd.read_csv(ilm_surface_path, index_col=0)
+#     rnfl_surface = pd.read_csv(rnfl_surface_path, index_col=0)
+#     ilm_surface = (surface_smoothing(ilm_surface)* vert_scale).round() 
+#     rnfl_surface = (surface_smoothing(rnfl_surface)* vert_scale).round()
+
+#     rnfl_thickness_df = pd.read_csv(rnfl_thickness_path, index_col=0)
+#     rnfl_thickness_df = rnfl_thickness_df * vert_scale * microns_per_pix
+
+#     img_data = np.fromfile(img_path, dtype=np.uint8).reshape(200, 1024, 200)
+
+#     proj_image = img_data.mean(axis=1)
+#     slab_image = get_slab_image(img_data, ilm_surface)
+    
+#     scan_center = find_onh_center(rnfl_thickness_df.values)
+#     der_circle_scan, der_ilm_surface, der_rnfl_surface = make_derived_circle_scan(
+#         img_data,
+#         ilm_surface.values,
+#         rnfl_surface.values,
+#         scan_center,
+#         scan_eye
+#     )
+
+#     gs = gridspec.GridSpec(2,3)
+#     fig = plt.figure(figsize=(10,10))
+#     fig.subplots_adjust(wspace=0, hspace=0)
+#     circle_ax = fig.add_subplot(gs[0, :3])
+#     proj_ax = fig.add_subplot(gs[1, 0])
+#     slab_ax = fig.add_subplot(gs[1, 1])
+#     rnfl_ax = fig.add_subplot(gs[1, 2])
+
+#     # show derived circle scan
+#     circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
+#     circle_ax.set_title('Derived Circumpalliary Circle Scan')
+    
+#     # set ticks to scale
+#     xticks = np.array([0, 90, 180, 270, 359])
+#     xticks_pos = xticks * (der_circle_scan.shape[1] / 360)
+#     yticks = np.array([0, 1, 2, 3, 4, 5, 6])
+#     yticks_pos = yticks * (der_circle_scan.shape[0] / 6)
+#     circle_ax.set_xticks(xticks_pos, ['T', 'S', 'N', 'I', 'T'])
+#     circle_ax.set_yticks(yticks_pos, yticks)
+#     # circle_ax.axis('off')
+#     # circle_ax.get_xaxis().set_visible(False)
+#     # circle_ax.get_yaxis().set_visible(False)
+
+#     # plot ilm/rnfl surfaces
+#     # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
+#     der_ilm_surface.plot(linewidth=1, color='cyan', ax=circle_ax)
+#     der_rnfl_surface.plot(linewidth=1, color='r', ax=circle_ax)
+
+#     # show projection, slab, and rnfl thickness maps
+#     proj_ax.imshow(proj_image, cmap='gray', aspect='equal')
+#     slab_ax.imshow(slab_image, cmap='gray', aspect='equal')
+#     rnfl_ax.imshow(rnfl_thickness_df.values, aspect='equal', cmap='jet')
+
+#     proj_ax.set_title('Projection Image', y=-0.1)
+#     slab_ax.set_title('En Face Slab Image', y=-0.1)
+#     rnfl_ax.set_title('RNFL Thickness Map', y=-0.1)
+
+#     for ax in (proj_ax, slab_ax, rnfl_ax):
+#         ax.get_xaxis().set_visible(False)
+#         ax.get_yaxis().set_visible(False)
+
+#     fig.suptitle(Path(img_path).name[:-4])
+
+#     fig.tight_layout()
+
+def draw_derived_en_face_imgs(json_collection, savefig=False):
+    json_collection = pd.Series(json_collection)
+    for im_key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
+        json_collection[im_key] = read_img_base64(json_collection[im_key]) # read base64 image data
+    for key in ['derived_ilm_surface', 'derived_rnfl_surface']:
+        json_collection[key] = pd.Series(json_collection[key]) # load to pandas series
+    
+    # spectralis_raw_path = json_collection.spectralis_raw_path
+    der_circle_scan = json_collection.derived_circle_scan
+    der_ilm_surface = json_collection.derived_ilm_surface
+    der_rnfl_surface = json_collection.derived_rnfl_surface
+
+    gs_rows = 2 #if spectralis_raw_path is None else 3
+    gs = gridspec.GridSpec(gs_rows,3)
+    fig = plt.figure(figsize=(10,10))# if spectralis_raw_path is None else 13.33))
+    fig.subplots_adjust(wspace=0, hspace=0)
+    circle_ax = fig.add_subplot(gs[0, :])
+    proj_ax = fig.add_subplot(gs[1, 0])
+    slab_ax = fig.add_subplot(gs[1, 1])
+    rnfl_ax = fig.add_subplot(gs[1, 2])
+    # if spectralis_raw_path is not None:
+    #     spectralis_raw_ax = fig.add_subplot(gs[2, :])
+
+    # show derived circle scan
+    circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
+    circle_ax.set_title('Derived Circumpalliary Circle Scan')
+    
+    # set ticks to scale
+    xticks = np.array([0, 90, 180, 270, 359])
+    xticks_pos = xticks * (der_circle_scan.shape[1] / 360)
+    xtick_labels_region = ['T', 'S', 'N', 'I', 'T']
+    xtick_labels_angle = [90, 0, 270, 180, 90] if json_collection.scan_eye=='OS' else [270, 0, 90, 180, 270]
+    xtick_labels = [f'{region}\n({angle})' for region, angle in zip(xtick_labels_region, xtick_labels_angle)]
+
+    yticks = np.array([0, 1, 2])
+    yticks_pos = yticks * (der_circle_scan.shape[0] / 2)
+    circle_ax.set_xticks(xticks_pos, xtick_labels)
+    circle_ax.set_yticks(yticks_pos, [f'{x}\nmm' for x in yticks])
+    minor_yticks = np.linspace(0,2,9) * (der_circle_scan.shape[0] / 2)
+    circle_ax.yaxis.set_minor_locator(FixedLocator(minor_yticks))
+    # circle_ax.axis('off')
+    # circle_ax.get_xaxis().set_visible(False)
+    # circle_ax.get_yaxis().set_visible(False)
+
+    # plot ilm/rnfl surfaces
+    # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
+    der_ilm_surface.plot(linewidth=1, color='cyan', ax=circle_ax)
+    der_rnfl_surface.plot(linewidth=1, color='r', ax=circle_ax)
+
+    # show projection, slab, and rnfl thickness maps
+    proj_ax.imshow(json_collection.projection_image, cmap='gray', aspect='equal')
+    slab_ax.imshow(json_collection.en_face_slab_image, cmap='gray', aspect='equal')
+    rnfl_ax.imshow(json_collection.rnfl_thickness_values, aspect='equal', cmap='jet', vmin=0, vmax=200)
+
+    proj_ax.set_title('Projection Image', y=-0.1)
+    slab_ax.set_title('En Face Slab Image', y=-0.1)
+    rnfl_ax.set_title('RNFL Thickness Map', y=-0.1)
+
+    def cricle_xy(r,phi):
+        center_y, center_x = json_collection.scan_center
+        return center_x + r*np.cos(phi), center_y + r*np.sin(phi)
+    
+    for ax in [proj_ax, slab_ax, rnfl_ax]:
+        phis=np.arange(0,6.28,0.01)
+        circle_width = OUTER_RADIUS - INNER_RADIUS
+        ax.plot( *cricle_xy(BASE_DIAM/2,phis), c='r',ls='-', alpha=.4)
+
+    der_circle_scan_dim = der_circle_scan.shape[1], der_circle_scan.shape[0]
+    # if spectralis_raw_path is not None:
+    #     spectralis_raw = cv2.imread(str(spectralis_raw_path))
+    #     spectralis_raw_ax.imshow(spectralis_raw, aspect='auto')
+    #     spectralis_raw_ax.axis('off')
+    #     spectralis_raw_ax.set_title('Spectralis Circle Scan')
+    #     spectralis_info = spectralis_table[spectralis_table.eye_id==pt_id[1:]+scan_eye].iloc[0]
+    #     spectralis_info = ' '.join([spectralis_info.ExamDate, spectralis_info.ExamTime])
+    #     spectralis_raw_ax.text(10,spectralis_raw.shape[0]*.95,spectralis_info, c='r')
+
+    for ax in (proj_ax, slab_ax, rnfl_ax):
+        ax.axis('off')
+        # ax.get_xaxis().set_visible(False)
+        # ax.get_yaxis().set_visible(False)
+
+    fig.suptitle(json_collection.scan_outname)
+
+    fig.tight_layout()
+    if savefig:
+        fig_outpath = Path('data_wd').joinpath('plots', json_collection.scan_outname+'_comb_plots.png')
+        fig_outpath.parent.mkdir(exist_ok=True, parents=True)
+        fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
+    return fig
