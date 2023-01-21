@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator
 from pathlib import Path
 from src.post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
-    BASE_DIAM, get_stitched_image, compute_top_layer, \
+    BASE_DIAM, get_stitched_image, compute_top_layer, load_derived_json, \
     morph_operations, bool_mask, surface_smoothing, read_img_base64
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
@@ -255,13 +255,7 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
 
 #     fig.tight_layout()
 
-def draw_derived_en_face_imgs(json_collection, savefig=False):
-    json_collection = pd.Series(json_collection)
-    for im_key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
-        json_collection[im_key] = read_img_base64(json_collection[im_key]) # read base64 image data
-    for key in ['derived_ilm_surface', 'derived_rnfl_surface']:
-        json_collection[key] = pd.Series(json_collection[key]) # load to pandas series
-    
+def draw_derived_en_face_imgs(json_collection, savefig=False):    
     # spectralis_raw_path = json_collection.spectralis_raw_path
     der_circle_scan = json_collection.derived_circle_scan
     der_ilm_surface = json_collection.derived_ilm_surface
@@ -281,6 +275,11 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # show derived circle scan
     circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
     circle_ax.set_title('Derived Circumpalliary Circle Scan')
+
+    # plot ilm/rnfl surfaces
+    # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
+    der_ilm_surface.plot(linewidth=1, color='cyan', ax=circle_ax)
+    der_rnfl_surface.plot(linewidth=1, color='r', ax=circle_ax)
     
     # set ticks to scale
     xticks = np.array([0, 90, 180, 270, 359])
@@ -298,11 +297,6 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # circle_ax.axis('off')
     # circle_ax.get_xaxis().set_visible(False)
     # circle_ax.get_yaxis().set_visible(False)
-
-    # plot ilm/rnfl surfaces
-    # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
-    der_ilm_surface.plot(linewidth=1, color='cyan', ax=circle_ax)
-    der_rnfl_surface.plot(linewidth=1, color='r', ax=circle_ax)
 
     # show projection, slab, and rnfl thickness maps
     proj_ax.imshow(json_collection.projection_image, cmap='gray', aspect='equal')

@@ -41,6 +41,19 @@ def read_img_base64(img_str):
     img = cv2.imdecode(jpg_as_np, flags=0)
     return img
 
+def load_derived_json(json_path):
+    with open(json_path) as json_handle:
+        json_collection = json.load(json_handle)
+    
+    json_collection = pd.Series(json_collection)
+    for im_key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
+        json_collection[im_key] = read_img_base64(json_collection[im_key]) # read base64 image data
+    for key in ['derived_ilm_surface', 'derived_rnfl_surface']:
+        json_collection[key] = pd.Series(json_collection[key]) # load to pandas series
+        json_collection[key].index = json_collection[key].index.astype(float)
+    
+    return json_collection
+
 def bool_mask(img_arr):
     dist = (img_arr - MASK_RGB).sum(axis=2)**2
     mask = (dist < DIST_THRESHOLD)
