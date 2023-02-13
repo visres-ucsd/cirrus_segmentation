@@ -52,7 +52,7 @@ def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=
     if savefig:
         if savefig_path is None:
             savefig_path = f'plots/{Path(bscan_left).name}'
-        print(f'Saving figure to {savefig_path}')
+        # print(f'Saving figure to {savefig_path}')
         fig.savefig(savefig_path, bbox_inches='tight', facecolor='w', dpi=600)
     return fig
 
@@ -65,7 +65,7 @@ def animate_layers(path):
     outfn = os.path.join('anim', scan_id+".mp4")
     ffmpeg_cmd = f'ffmpeg -framerate 5 -pattern_type glob -i "temp/anim_layer_*.png" -c:v libx264 ' \
         f'-pix_fmt yuv420p -vf pad="width=ceil(iw/2)*2:height=ceil(ih/2)*2" -y {outfn}'
-    print(ffmpeg_cmd)
+    # print(ffmpeg_cmd)
     os.system(ffmpeg_cmd)
 
 def plot_with_layer(rnfl_path, axes=None):
@@ -104,7 +104,7 @@ def plot_with_layer(rnfl_path, axes=None):
         fig.savefig('figure.png', bbox_inches='tight', facecolor='w')
     else:
         for handle in legend.legendHandles:
-            print('setting size')
+            # print('setting size')
             handle._legmarker.set_markersize(6)
 
 def plot_LR_stitched(img_path, rnfl_path, ilm_path, axes=None, savefig=True, morph=False):
@@ -258,15 +258,15 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
 
 def draw_derived_en_face_imgs(json_collection, savefig=False):
     if not isinstance(json_collection, dict):
-        # treat as path and attempt to read json
-        with open(Path(json_collection), 'r') as fh:
-            json_collection = json.load(fh)
-            
+        # print('Reading JSON...')
+        json_collection = load_derived_json(json_collection)
+
     # spectralis_raw_path = json_collection.spectralis_raw_path
     der_circle_scan = json_collection.derived_circle_scan
     der_ilm_surface = json_collection.derived_ilm_surface
     der_rnfl_surface = json_collection.derived_rnfl_surface
 
+    # print('Initializing figure...')
     gs_rows = 2 #if spectralis_raw_path is None else 3
     gs = gridspec.GridSpec(gs_rows,3)
     fig = plt.figure(figsize=(10,10))# if spectralis_raw_path is None else 13.33))
@@ -278,6 +278,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # if spectralis_raw_path is not None:
     #     spectralis_raw_ax = fig.add_subplot(gs[2, :])
 
+    # print('Plotting data...')
     # show derived circle scan
     circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
     circle_ax.set_title('Derived Circumpalliary Circle Scan')
@@ -341,7 +342,9 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
 
     fig.tight_layout()
     if savefig:
+        # print('Saving figure...')
         fig_outpath = Path('data_wd').joinpath('plots', json_collection.scan_outname+'_comb_plots.png')
         fig_outpath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
+        return
     return fig
