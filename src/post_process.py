@@ -138,37 +138,35 @@ def get_stitched_image(img_fp):
     return together
 
 def process_mask_dir(ILM_mask_dir, outdir='data_wd/layer_maps/'):
-    try:
-        L_images = [i for i in Path(ILM_mask_dir).glob('*_L.jpg')]
-        layer_idxs = [int(p.name.split('_')[1]) for p in L_images]
+    L_images = [i for i in Path(ILM_mask_dir).glob('*_L.jpg')]
+    layer_idxs = [int(p.name.split('_')[1]) for p in L_images]
+    Path().glob('*_L.jpg')
 
-        RNFL_layers = {}
-        ILM_layers = {}
-        thickness_values = {}
+    RNFL_layers = {}
+    ILM_layers = {}
+    thickness_values = {}
 
-        # collect layer data
-        for layer_idx, image_path in zip(layer_idxs, L_images):
-            ILM_layer, RNFL_layer, RNFL_thickness =  get_RNFL_thickness(str(image_path))
+    # collect layer data
+    for layer_idx, image_path in zip(layer_idxs, L_images):
+        ILM_layer, RNFL_layer, RNFL_thickness =  get_RNFL_thickness(str(image_path))
 
-            RNFL_layers[layer_idx] = RNFL_layer
-            ILM_layers[layer_idx] = ILM_layer
-            thickness_values[layer_idx] = RNFL_thickness
+        RNFL_layers[layer_idx] = RNFL_layer
+        ILM_layers[layer_idx] = ILM_layer
+        thickness_values[layer_idx] = RNFL_thickness
 
-        # build layer dfs
-        RNFL_df = pd.concat(RNFL_layers, axis=1).T.sort_index().sort_index(axis=1)
-        ILM_df = pd.concat(ILM_layers, axis=1).T.sort_index().sort_index(axis=1)
-        thickness_df = surface_smoothing(RNFL_df) - surface_smoothing(ILM_df)
-        thickness_df = thickness_df[thickness_df>=0]
+    # build layer dfs
+    RNFL_df = pd.concat(RNFL_layers, axis=1).T.sort_index().sort_index(axis=1)
+    ILM_df = pd.concat(ILM_layers, axis=1).T.sort_index().sort_index(axis=1)
+    thickness_df = surface_smoothing(RNFL_df) - surface_smoothing(ILM_df)
+    thickness_df = thickness_df[thickness_df>=0]
 
-        out_folder = Path(outdir)
-        scan_rep = Path(ILM_mask_dir).name
-        out_folder.mkdir(parents=True, exist_ok=True)
+    out_folder = Path(outdir)
+    scan_rep = Path(ILM_mask_dir).name
+    out_folder.mkdir(parents=True, exist_ok=True)
 
-        RNFL_df.to_csv(out_folder.joinpath(f'{scan_rep}_RNFL_location.csv'))
-        ILM_df.to_csv(out_folder.joinpath(f'{scan_rep}_ILM_location.csv'))
-        thickness_df.to_csv(out_folder.joinpath(f'{scan_rep}_RNFL_thickness.csv'))
-    except ValueError:
-        print(f'Error processing {ILM_mask_dir}')
+    RNFL_df.to_csv(out_folder.joinpath(f'{scan_rep}_RNFL_location.csv'))
+    ILM_df.to_csv(out_folder.joinpath(f'{scan_rep}_ILM_location.csv'))
+    thickness_df.to_csv(out_folder.joinpath(f'{scan_rep}_RNFL_thickness.csv'))
 
 def surface_smoothing(layer_df):
     layer_df = scipy.signal.medfilt2d(layer_df, 3)
