@@ -351,6 +351,7 @@ def collect_json(img_path, savefig=False):
     }
 
     json_out_path = Path('data_wd/').joinpath('jsons', f'{scan_outname}.json')
+    json_out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(str(json_out_path), 'w') as json_handle:
         json.dump(json_dict, json_handle)
     # return json_dict
