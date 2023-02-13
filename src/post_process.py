@@ -18,20 +18,24 @@ DIST_THRESHOLD = 5000
 EXPECTED_SHAPE = (384, 496)
 MICRONS_PER_PIXEL = 2000. / 1024.#3.3
 VERT_SCALE = (1024./496.)
+TEMP_IDX = 1
 
 def image_to_base64(img_arr):
     '''
     Converts image to a base64 string with JPG encoding.
     '''
+    global TEMP_IDX
     img_arr = img_arr.copy()
     img_arr[np.isnan(img_arr)] = img_arr.max()
     
-    temp_im_file = 'temp/img_to_str.png'
+    temp_im_file = f'temp/img_to_str_{TEMP_IDX}.png'
+    TEMP_IDX += 1 
     Path(temp_im_file).parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(temp_im_file, img_arr)
     with open(temp_im_file, 'rb') as image_file:
         data = image_file.read()
     data = base64.b64encode(data).decode('utf-8')
+    Path(temp_im_file).unlink()
     return data
 
 def read_img_base64(img_str):
@@ -297,6 +301,10 @@ def find_onh_center(rnfl_thickness_mat):
     return center_mean_y, center_mean_x
 
 def collect_json(img_path, savefig=False):
+    debug = False
+
+    if debug:
+        print('Step 1/6: Loading data...')
     pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
     scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
 
@@ -319,10 +327,19 @@ def collect_json(img_path, savefig=False):
 
     img_data = np.fromfile(img_path, dtype=np.uint8).reshape(200, 1024, 200)
 
+    if debug:
+        print('Step 2/6: Generating projection image...')
     proj_image = img_data.mean(axis=1)
+
+    if debug:
+        print('Step 3/6: Generating slab image...')
     slab_image = get_slab_image(img_data, ilm_surface)
     
+    if debug:
+        print('Step 4/6: Looking for onh center...')
     scan_center = find_onh_center(rnfl_thickness_df.values)
+    if debug:
+        print('Step 5/6: Generating derived circle image...')
     der_circle_scan, der_ilm_surface, der_rnfl_surface = make_derived_circle_scan(
         img_data,
         ilm_surface.values,
@@ -331,6 +348,8 @@ def collect_json(img_path, savefig=False):
         scan_eye
     )
 
+    if debug:
+        print('Step 6/6: Building JSON dictionary...')
     json_dict = {
         'img_path': str(img_path),
         'pt_id': pt_id,
@@ -350,6 +369,8 @@ def collect_json(img_path, savefig=False):
         'spectralis_raw_path': spectralis_raw_path
     }
 
+    if debug:
+        print('Saving json...')
     json_out_path = Path('data_wd/').joinpath('jsons', f'{scan_outname}.json')
     json_out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(str(json_out_path), 'w') as json_handle:
