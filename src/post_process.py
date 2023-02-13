@@ -27,6 +27,7 @@ def image_to_base64(img_arr):
     img_arr[np.isnan(img_arr)] = img_arr.max()
     
     temp_im_file = 'temp/img_to_str.png'
+    Path(temp_im_file).parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(temp_im_file, img_arr)
     with open(temp_im_file, 'rb') as image_file:
         data = image_file.read()
