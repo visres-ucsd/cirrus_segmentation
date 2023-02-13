@@ -136,7 +136,7 @@ def get_stitched_image(img_fp):
 
     return together
 
-def process_mask_dir(ILM_mask_dir):
+def process_mask_dir(ILM_mask_dir, outdir='data_wd/layer_maps/'):
     L_images = [i for i in Path(ILM_mask_dir).glob('*_L.jpg')]
     layer_idxs = [int(p.name.split('_')[1]) for p in L_images]
 
@@ -158,7 +158,7 @@ def process_mask_dir(ILM_mask_dir):
     thickness_df = surface_smoothing(RNFL_df) - surface_smoothing(ILM_df)
     thickness_df = thickness_df[thickness_df>=0]
 
-    out_folder = Path('data_wd/layer_maps/')
+    out_folder = Path(outdir)
     scan_rep = Path(ILM_mask_dir).name
     out_folder.mkdir(parents=True, exist_ok=True)
 
@@ -361,15 +361,19 @@ def main():
     Writes outputs to `data_wd/layer_maps/`.
     '''
     parser = argparse.ArgumentParser(description='Cirrus Segmentation post-processing')
+    parser.add_argument('--proj_dir', default=None)
     parser.add_argument('--mask_dir_list', default=None)
     args = parser.parse_args()
 
-    if args.mask_dir_list is None:
+    if args.proj_dir is not None:
+        ILM_mask_dirs = pd.Series([p for p in Path(args.proj_dir).joinpath('data_wd', 'ILM_masks').glob('*/*')])
+    elif args.mask_dir_list is None:
         ILM_mask_dirs = pd.Series([p for p in Path('data_wd/ILM_masks/').glob('*/*')])
     else:
         ILM_mask_dirs = pd.read_csv(args.mask_dir_list, names=['dirs']).dirs
     
-    p_map(process_mask_dir, ILM_mask_dirs)
+    outdir=str(Path(args.proj_dir).joinpath('data_wd', 'layer_maps'))
+    p_map(process_mask_dir, ILM_mask_dirs, outdir=[outdir]*ILM_mask_dirs.size)
     
     
 if __name__=='__main__':
