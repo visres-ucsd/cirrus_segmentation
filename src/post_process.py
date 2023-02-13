@@ -214,7 +214,7 @@ OUTER_RADIUS = (BASE_DIAM + (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 INNER_RADIUS = (BASE_DIAM - (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 
 def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
-    print(f'{BASE_DIAM=}')
+    # print(f'{BASE_DIAM=}')
     onh_center = np.array(onh_center).round()
 
     coords = np.stack(np.meshgrid(range(200), range(200)), axis=2)
@@ -239,7 +239,7 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
         bin_labels = np.flip((bin_labels + 90) % 360)
     elif mode=='OD':
         bin_labels = (bin_labels - 90) % 360
-    print(f'{mode}: {bin_labels[0]}, {bin_labels[90]}, {bin_labels[180]}, {bin_labels[270]}')
+    # print(f'{mode}: {bin_labels[0]}, {bin_labels[90]}, {bin_labels[180]}, {bin_labels[270]}')
 
     # debug print out of angular mappings, should follow:
     # OS: 270 --> 360/0 --> 90 --> 180 --> 270
@@ -352,7 +352,7 @@ def collect_json(img_path, savefig=False):
     json_out_path = Path('data_wd/').joinpath('jsons', f'{scan_outname}.json')
     with open(str(json_out_path), 'w') as json_handle:
         json.dump(json_dict, json_handle)
-    return json_dict
+    # return json_dict
 
 def main():
     '''
