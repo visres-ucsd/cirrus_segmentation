@@ -367,9 +367,9 @@ def main():
     args = parser.parse_args()
 
     if args.proj_dir is not None:
-        ILM_mask_dirs = pd.Series([p for p in Path(args.proj_dir).joinpath('data_wd', 'ILM_masks').glob('*/*')])
+        ILM_mask_dirs = pd.Series([p for p in Path(args.proj_dir).joinpath('data_wd', 'ILM_masks').glob('PSD*/*')])
     elif args.mask_dir_list is None:
-        ILM_mask_dirs = pd.Series([p for p in Path('data_wd/ILM_masks/').glob('*/*')])
+        ILM_mask_dirs = pd.Series([p for p in Path('data_wd/ILM_masks/').glob('PSD*/*')])
     else:
         ILM_mask_dirs = pd.read_csv(args.mask_dir_list, names=['dirs']).dirs
     
