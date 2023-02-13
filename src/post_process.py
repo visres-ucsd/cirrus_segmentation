@@ -3,6 +3,7 @@ import pandas as pd
 import cv2
 import numpy as np
 from p_tqdm import p_map
+from functools import partial
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from skimage.measure import label
@@ -373,7 +374,7 @@ def main():
         ILM_mask_dirs = pd.read_csv(args.mask_dir_list, names=['dirs']).dirs
     
     outdir=str(Path(args.proj_dir).joinpath('data_wd', 'layer_maps'))
-    p_map(process_mask_dir, ILM_mask_dirs, outdir=[outdir]*ILM_mask_dirs.size)
+    p_map(partial(process_mask_dir, outdir=outdir), ILM_mask_dirs)
     
     
 if __name__=='__main__':
