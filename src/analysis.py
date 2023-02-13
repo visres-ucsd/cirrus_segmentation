@@ -7,6 +7,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator
 from pathlib import Path
+import json
 from src.post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
     BASE_DIAM, get_stitched_image, compute_top_layer, load_derived_json, \
     morph_operations, bool_mask, surface_smoothing, read_img_base64
@@ -255,7 +256,12 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
 
 #     fig.tight_layout()
 
-def draw_derived_en_face_imgs(json_collection, savefig=False):    
+def draw_derived_en_face_imgs(json_collection, savefig=False):
+    if not isinstance(json_collection, dict):
+        # treat as path and attempt to read json
+        with open(Path(json_collection), 'r') as fh:
+            json_collection = json.load(fh)
+            
     # spectralis_raw_path = json_collection.spectralis_raw_path
     der_circle_scan = json_collection.derived_circle_scan
     der_ilm_surface = json_collection.derived_ilm_surface
