@@ -265,14 +265,19 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
 
         rnfl_values = np.array([rnfl_surface[y, x] for y, x in bin_coords])
         der_rnfl_surface[bin_idx] = np.nanmean(rnfl_values)
+    
+    try:
+        der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
+        der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
+        der_ilm_surface = pd.Series(der_ilm_surface)
+        der_rnfl_surface = pd.Series(der_rnfl_surface)
 
-    der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
-    der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
-    der_ilm_surface = pd.Series(der_ilm_surface)
-    der_rnfl_surface = pd.Series(der_rnfl_surface)
-
-    der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
-    der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
+        der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
+        der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
+    except cv2.error as e:
+        print(f'Error building derived circle scan')
+        print(f'ONH Center: {onh_center}')
+        raise e
     
     # plt.figure(figsize=(10,5))
     # plt.imshow(der_circle_scan, cmap='gray', aspect='auto')
