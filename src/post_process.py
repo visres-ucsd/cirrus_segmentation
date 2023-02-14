@@ -218,13 +218,23 @@ BASE_DIAM = 3.46 * EN_FACE_PIX_RESOLUTION # 3.46mm in px
 OUTER_RADIUS = (BASE_DIAM + (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 INNER_RADIUS = (BASE_DIAM - (.1 * EN_FACE_PIX_RESOLUTION)) / 2
 
+def euc_dist(ref_point, arr, axis=-1):
+    '''Euclidean distance function. Use axis to determine which axis to compute against.'''
+    return np.linalg.norm(arr - ref_point, axis=axis)
+
+DEFAULT_EN_FACE_CENTER = np.array([99, 99])
+
 def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mode):
     # print(f'{BASE_DIAM=}')
     onh_center = np.array(onh_center).round()
 
+    # protect against onh_centers too far away from image center
+    if euc_dist(DEFAULT_EN_FACE_CENTER, onh_center) >= INNER_RADIUS:
+        onh_center = DEFAULT_EN_FACE_CENTER
+
     coords = np.stack(np.meshgrid(range(200), range(200)), axis=2)
     coord_diff = coords - onh_center
-    coord_dist = np.sqrt(np.sum((coord_diff)**2, axis=2))
+    coord_dist = np.linalg.norm(coord_diff, axis=2)
     coord_mask = np.logical_and(INNER_RADIUS < coord_dist, coord_dist < OUTER_RADIUS)
     # plt.figure(figsize=(10,10))
     # plt.imshow(coord_mask)
