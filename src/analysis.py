@@ -346,5 +346,6 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         fig_outpath = Path('data_wd').joinpath('plots', json_collection.scan_outname+'_comb_plots.png')
         fig_outpath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
+        fig.close()
         return
     return fig
