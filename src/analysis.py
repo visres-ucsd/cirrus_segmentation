@@ -263,8 +263,8 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
 
     # spectralis_raw_path = json_collection.spectralis_raw_path
     der_circle_scan = json_collection.derived_circle_scan
-    der_ilm_surface = json_collection.derived_ilm_surface
-    der_rnfl_surface = json_collection.derived_rnfl_surface
+    der_ilm_surface = json_collection.derived_circle_segmentation.ILM_y
+    der_rnfl_surface = json_collection.derived_circle_segmentation.RNFL_y
 
     # print('Initializing figure...')
     gs_rows = 2 #if spectralis_raw_path is None else 3
