@@ -20,6 +20,15 @@ MICRONS_PER_PIXEL = 2000. / 1024.#3.3
 VERT_SCALE = (1024./496.)
 TEMP_IDX = 1
 
+def b64str_encode(ndarr):
+    return base64.b64encode(ndarr.tobytes()).decode('utf-8')
+
+def b64_decode(b64str, dtype=np.int8, shape=None):
+    decoded = np.frombuffer(base64.b64decode(b64str), dtype=dtype)
+    if not shape is None:
+        decoded = decoded.reshape(*shape)
+    return decoded
+
 def image_to_base64(img_arr):
     '''
     Converts image to a base64 string with JPG encoding.
@@ -34,30 +43,43 @@ def image_to_base64(img_arr):
     cv2.imwrite(temp_im_file, img_arr)
     with open(temp_im_file, 'rb') as image_file:
         data = image_file.read()
-    data = base64.b64encode(data).decode('utf-8')
+    data = b64str_encode(data)
     Path(temp_im_file).unlink()
     return data
 
-def read_img_base64(img_str):
+def read_img_base64(img_str, dtype=np.uint8):
     '''
     Loads an image saved as a base64 string.
     '''
-    jpg_data = base64.b64decode(img_str)
-    jpg_as_np = np.frombuffer(jpg_data, dtype=np.uint8)
-    img = cv2.imdecode(jpg_as_np, flags=0)
+    data = b64_decode(img_str, dtype=dtype)
+    img = cv2.imdecode(data, flags=0)
     return img
 
 def load_derived_json(json_path):
     with open(json_path) as json_handle:
         json_collection = json.load(json_handle)
     
-    json_collection = pd.Series(json_collection)
-    for im_key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
-        json_collection[im_key] = read_img_base64(json_collection[im_key]) # read base64 image data
+    if not 'jpg_encoded' in json_collection: # assume jpg encoding
+        json_collection['jpg_encoded'] = False
+
+    if json_collection['jpg_encoded']:
+        for im_key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
+             # read base64 jpg data
+            json_collection[im_key] = read_img_base64(json_collection[im_key])
+    else:
+        for im_key in ['projection_image', 'en_face_slab_image']:
+             # read base64 numpy data
+            json_collection[im_key] = b64_decode(json_collection[im_key], dtype=np.float16, shape=(200, 200))
+        json_collection['derived_circle_scan'] = b64_decode(json_collection['derived_circle_scan'], dtype=np.float16, shape=(1024, 360))
+    
+    json_collection['rnfl_thickness_values'] = b64_decode(json_collection['rnfl_thickness_values'], dtype=np.float16, shape=(200, 200))
+
+    # load surfaces as pandas series
     for key in ['derived_ilm_surface', 'derived_rnfl_surface']:
-        json_collection[key] = pd.Series(json_collection[key]) # load to pandas series
+        json_collection[key] = pd.Series(json_collection[key])
         json_collection[key].index = json_collection[key].index.astype(float)
     
+    json_collection = pd.Series(json_collection)
     return json_collection
 
 def bool_mask(img_arr):
@@ -279,12 +301,12 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
     
     try:
         der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
-        der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
+        # der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
         der_ilm_surface = pd.Series(der_ilm_surface)
         der_rnfl_surface = pd.Series(der_rnfl_surface)
 
-        der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
-        der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
+        # der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
+        # der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
     except cv2.error as e:
         print(f'Error building derived circle scan')
         print(f'ONH Center: {onh_center}')
@@ -316,7 +338,7 @@ def find_onh_center(rnfl_thickness_mat):
     center_mean_y, center_mean_x = np.mean(np.where(center_component), axis=1)
     return center_mean_y, center_mean_x
 
-def collect_json(img_path, savefig=False):
+def collect_json(img_path, savefig=False, jpg_encode=False):
     debug = False
 
     if debug:
@@ -375,15 +397,21 @@ def collect_json(img_path, savefig=False):
         'scan_time': scan_time,
         'scan_outname': scan_outname,
         'scan_center': list(scan_center),
-        'derived_circle_scan': image_to_base64(der_circle_scan),
-        # 'derived_circle_scan_raw': der_circle_scan,
+        'derived_circle_scan': der_circle_scan,
+        'projection_image': proj_image,
+        'en_face_slab_image': slab_image,
         'derived_ilm_surface': der_ilm_surface.to_dict(),
         'derived_rnfl_surface': der_rnfl_surface.to_dict(),
-        'projection_image': image_to_base64(proj_image),
-        'en_face_slab_image': image_to_base64(slab_image),
-        'rnfl_thickness_values': rnfl_thickness_df.values.tolist(),
-        'spectralis_raw_path': spectralis_raw_path
+        'rnfl_thickness_values': rnfl_thickness_df.values,
+        'spectralis_raw_path': spectralis_raw_path,
+        'jpg_encoded': jpg_encode
     }
+
+    for key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
+        if jpg_encode:
+            json_dict[key] = image_to_base64(json_dict[key])
+        else:
+            json_dict[key] = b64str_encode(json_dict[key].astype(np.float16))
 
     if debug:
         print('Saving json...')
