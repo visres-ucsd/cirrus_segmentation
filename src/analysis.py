@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator
 from pathlib import Path
 import json
-from src.post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
-    BASE_DIAM, get_stitched_image, compute_top_layer, load_derived_json, \
-    morph_operations, bool_mask, surface_smoothing, read_img_base64
+from post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
+    BASE_DIAM, get_stitched_image, compute_top_layer, \
+    morph_operations, bool_mask, surface_smoothing
+from utils import load_json_collection
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
     def get_ilm_rnfl_surfaces(path):
@@ -183,7 +184,7 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
 
 def draw_derived_en_face_imgs(json_collection, savefig=False):
     if not isinstance(json_collection, dict):
-        json_collection = load_derived_json(json_collection)
+        json_collection = load_json_collection(json_collection)
 
     # spectralis_raw_path = json_collection.spectralis_raw_path
     der_circle_scan = json_collection.derived_circle_scan
