@@ -7,7 +7,7 @@ from functools import partial
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from skimage.measure import label
-from skimage import morphology
+from skimage import morphology, transform
 import argparse
 import scipy
 import base64
@@ -18,7 +18,6 @@ DIST_THRESHOLD = 5000
 EXPECTED_SHAPE = (384, 496)
 MICRONS_PER_PIXEL = 2000. / 1024.#3.3
 VERT_SCALE = (1024./496.)
-TEMP_IDX = 1
 
 
 ## Base64 Encoding Utils
@@ -64,12 +63,10 @@ def image_to_base64(img_arr):
     '''
     Converts image to a base64 string with JPG encoding.
     '''
-    global TEMP_IDX
     img_arr = img_arr.copy()
     img_arr[np.isnan(img_arr)] = img_arr.max()
     
-    temp_im_file = f'temp/img_to_str_{TEMP_IDX}.png'
-    TEMP_IDX += 1 
+    temp_im_file = f'temp/img_to_str.png'
     Path(temp_im_file).parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(temp_im_file, img_arr)
     with open(temp_im_file, 'rb') as image_file:
@@ -78,11 +75,11 @@ def image_to_base64(img_arr):
     Path(temp_im_file).unlink()
     return data
 
-def read_img_base64(img_str, dtype=np.uint8):
+def read_img_base64(data_str, dtype=np.uint8):
     '''
     Loads an image saved as a base64 string.
     '''
-    data = b64_decode(img_str, dtype=dtype)
+    data = b64_decode(data_str, dtype=dtype)
     img = cv2.imdecode(data, flags=0)
     return img
 
@@ -90,6 +87,9 @@ def load_derived_json(json_path):
     with open(json_path) as json_handle:
         json_collection = json.load(json_handle)
     
+    for key in ['rnfl_thickness_values', 'ILM_y', 'RNFL_y']:
+        json_collection[key] = b64decode_numpy(json_collection[key])
+
     if not 'jpg_encoded' in json_collection: # assume jpg encoding
         json_collection['jpg_encoded'] = False
 
@@ -98,7 +98,7 @@ def load_derived_json(json_path):
              # read base64 jpg data
             json_collection[im_key] = read_img_base64(json_collection[im_key])
     else:
-        for im_key in ['projection_image', 'en_face_slab_image', 'derived_circle_scan', 'rnfl_thickness_values']:
+        for im_key in ['projection_image', 'en_face_slab_image', 'derived_circle_scan']:
              # read base64 numpy data
             json_collection[im_key] = b64decode_numpy(json_collection[im_key])
     #     json_collection['derived_circle_scan'] = b64_decode(json_collection['derived_circle_scan'])
@@ -107,6 +107,9 @@ def load_derived_json(json_path):
 
     # load derived surfaces df
     json_collection['derived_circle_segmentation'] = base64_dec_df(json_collection['derived_circle_segmentation'])
+
+    if 'cube_data' in json_collection:
+        json_collection['cube_data'] = b64decode_numpy(json_collection['cube_data'])
 
     # load surfaces as pandas series
     # for key in ['derived_ilm_surface', 'derived_rnfl_surface']:
@@ -232,9 +235,11 @@ def process_mask_dir(ILM_mask_dir, outdir='data_wd/layer_maps/'):
     thickness_df.to_csv(out_folder.joinpath(f'{scan_rep}_RNFL_thickness.csv'))
 
 def surface_smoothing(layer_df):
+    as_df = isinstance(layer_df, pd.DataFrame)
     layer_df = scipy.signal.medfilt2d(layer_df, 3)
     layer_df = cv2.resize(layer_df, (200,200))
-    layer_df = pd.DataFrame(layer_df)
+    if as_df:
+        layer_df = pd.DataFrame(layer_df)
     return layer_df
 
 def load_img_data(img_path):
@@ -374,7 +379,7 @@ def find_onh_center(rnfl_thickness_mat):
     center_mean_y, center_mean_x = np.mean(np.where(center_component), axis=1)
     return center_mean_y, center_mean_x
 
-def collect_json(img_path, savefig=False, jpg_encode=False):
+def collect_json(img_path, savefig=False, jpg_encode=False, include_cube=False):
     debug = False
 
     if debug:
@@ -391,10 +396,12 @@ def collect_json(img_path, savefig=False, jpg_encode=False):
     except StopIteration:
         spectralis_raw_path = None
 
-    ilm_surface = pd.read_csv(ilm_surface_path, index_col=0)
-    rnfl_surface = pd.read_csv(rnfl_surface_path, index_col=0)
-    ilm_surface = (surface_smoothing(ilm_surface) * VERT_SCALE).round() 
-    rnfl_surface = (surface_smoothing(rnfl_surface) * VERT_SCALE).round()
+    ilm_surface = pd.read_csv(ilm_surface_path, index_col=0)  * VERT_SCALE
+    rnfl_surface = pd.read_csv(rnfl_surface_path, index_col=0) * VERT_SCALE
+    ilm_surface_raw = transform.resize(ilm_surface.values, (200,200))
+    rnfl_surface_raw = transform.resize(rnfl_surface.values, (200,200))
+    ilm_surface = (surface_smoothing(ilm_surface))#.round() 
+    rnfl_surface = (surface_smoothing(rnfl_surface))#.round()
 
     rnfl_thickness_df = pd.read_csv(rnfl_thickness_path, index_col=0)
     rnfl_thickness_df = rnfl_thickness_df * VERT_SCALE * MICRONS_PER_PIXEL
@@ -443,12 +450,17 @@ def collect_json(img_path, savefig=False, jpg_encode=False):
         'en_face_slab_image': slab_image,
         # 'derived_ilm_surface': der_ilm_surface.to_dict(),
         # 'derived_rnfl_surface': der_rnfl_surface.to_dict(),
-        'rnfl_thickness_values': rnfl_thickness_df.values,
+        'rnfl_thickness_values': b64encode_numpy(rnfl_thickness_df.values.astype(np.float16)),
+        'ILM_y': b64encode_numpy(ilm_surface_raw.astype(np.float16)),
+        'RNFL_y': b64encode_numpy(rnfl_surface_raw.astype(np.float16)),
         'spectralis_raw_path': spectralis_raw_path,
         'jpg_encoded': jpg_encode
     }
 
-    for key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
+    if include_cube:
+        json_dict['cube_data'] = b64encode_numpy(img_data)
+
+    for key in ['derived_circle_scan', 'projection_image', 'en_face_slab_image']:
         if jpg_encode:
             json_dict[key] = image_to_base64(json_dict[key])
         else:
