@@ -340,18 +340,9 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
         rnfl_values = np.array([rnfl_surface[y, x] for y, x in bin_coords])
         der_rnfl_surface[bin_idx] = np.nanmean(rnfl_values)
     
-    try:
-        der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
-        # der_circle_scan = cv2.resize(der_circle_scan, (3*1024, 1024))
-        der_ilm_surface = pd.Series(der_ilm_surface)
-        der_rnfl_surface = pd.Series(der_rnfl_surface)
-
-        # der_ilm_surface.index = der_ilm_surface.index * der_circle_scan.shape[1] / bin_labels.size
-        # der_rnfl_surface.index = der_rnfl_surface.index * der_circle_scan.shape[1] / bin_labels.size
-    except cv2.error as e:
-        print(f'Error building derived circle scan')
-        print(f'ONH Center: {onh_center}')
-        raise e
+    der_circle_scan = np.flip(np.array(der_circle_scan).T, axis=0)#.astype(int)
+    der_ilm_surface = pd.Series(der_ilm_surface)
+    der_rnfl_surface = pd.Series(der_rnfl_surface)
     
     # plt.figure(figsize=(10,5))
     # plt.imshow(der_circle_scan, cmap='gray', aspect='auto')
@@ -372,6 +363,7 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
     return der_circle_scan, der_ilm_surface, der_rnfl_surface
 
 def find_onh_center(rnfl_thickness_mat):
+    '''Approximates the ONH center by nan values in an RNFL thickness map.'''
     rnfl_isna = np.isnan(rnfl_thickness_mat).astype(np.uint8)
     ret, labels = cv2.connectedComponents(rnfl_isna)
     center_component = labels == labels[99,99]
@@ -380,6 +372,7 @@ def find_onh_center(rnfl_thickness_mat):
     return center_mean_y, center_mean_x
 
 def collect_json(img_path, savefig=False, jpg_encode=False, include_cube=False):
+    '''Collects data into a JSON reprsentation and writes it out to file.'''
     debug = False
 
     if debug:
@@ -448,8 +441,6 @@ def collect_json(img_path, savefig=False, jpg_encode=False, include_cube=False):
         'derived_circle_segmentation': base64_enc_df(derived_circle_segmentation),
         'projection_image': proj_image,
         'en_face_slab_image': slab_image,
-        # 'derived_ilm_surface': der_ilm_surface.to_dict(),
-        # 'derived_rnfl_surface': der_rnfl_surface.to_dict(),
         'rnfl_thickness_values': b64encode_numpy(rnfl_thickness_df.values.astype(np.float16)),
         'ILM_y': b64encode_numpy(ilm_surface_raw.astype(np.float16)),
         'RNFL_y': b64encode_numpy(rnfl_surface_raw.astype(np.float16)),
