@@ -7,6 +7,20 @@ import json
 import cv2
 from pathlib import Path
 
+def save_json_dict(json_dict, outfp):
+    def _jsonify_obj(obj):
+        if isinstance(obj, np.ndarray):
+            return b64encode_numpy(obj)
+        elif isinstance(obj, pd.DataFrame):
+            return base64_enc_df(obj)
+        else:
+            return obj
+        
+    json_dict.apply(_jsonify_obj).to_json(outfp)
+
+def load_numpy_onh_cube_img(img_path):
+    return np.fromfile(img_path, dtype=np.uint8).reshape(200, 1024, 200)
+
 # Base64 Encoding Utils
 def b64str_encode(ndarr):
     return base64.b64encode(ndarr.tobytes()).decode('utf-8')

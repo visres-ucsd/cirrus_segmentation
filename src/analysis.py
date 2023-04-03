@@ -183,7 +183,7 @@ def plot_layer(pt_id, eye, date=None, time=None, scan_id=None, layer=None, morph
     plot_LR_stitched(str(rnfl_fp), savefig=False, morph=morph)
 
 def draw_derived_en_face_imgs(json_collection, savefig=False):
-    if not isinstance(json_collection, dict):
+    if not isinstance(json_collection, (pd.Series, dict)):
         json_collection = load_json_collection(json_collection)
 
     # spectralis_raw_path = json_collection.spectralis_raw_path
@@ -274,9 +274,12 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         return
     return fig
 
-def visualize_bscan(json_collection, bscan_idx, visualize_layers=False, smoothing=False):
+def visualize_bscan(json_collection, bscan_idx, visualize_layers=False, smoothing=False, ax=None):
     '''For visualizing bscans from JSON collections with cube data embedded.'''
-    bscan = np.flip(json_collection.cube_data[bscan_idx,:,:], axis=0)
+    bscan = np.flip(json_collection.cube_data, axis=1)[bscan_idx,:,:]
+    # bscan = json_collection.cube_data[bscan_idx,:,:]
+    # bscan = np.flip(bscan, axis=0)
+    # bscan = cv2.resize(bscan, (768, 496))
 
     ILM_y = json_collection.ILM_y
     RNFL_y = json_collection.RNFL_y
@@ -284,9 +287,12 @@ def visualize_bscan(json_collection, bscan_idx, visualize_layers=False, smoothin
     if smoothing: # pass ILM and RNFL through median filter
         ILM_y = scipy.signal.medfilt2d(ILM_y.astype(np.float32), 3)
         RNFL_y = scipy.signal.medfilt2d(RNFL_y.astype(np.float32), 3)
-
-    fig, ax = plt.subplots(figsize=(10,10))
+    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10,10))
     ax.imshow(bscan, aspect='auto', cmap='gray')
-    ax.plot(ILM_y[bscan_idx], color='c')
-    ax.plot(RNFL_y[bscan_idx], color='r')
-    return ax
+    ax.plot(ILM_y[bscan_idx], color='c', label='ILM')
+    ax.plot(RNFL_y[bscan_idx], color='r', label='RNFL')
+    ax.legend()
+    if ax is None:
+        return ax

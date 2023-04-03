@@ -6,6 +6,7 @@ from p_tqdm import p_map
 from functools import partial
 from skimage.measure import label
 from skimage import morphology, transform
+from statsmodels.nonparametric.smoothers_lowess import lowess
 import argparse
 import scipy
 import json
@@ -44,7 +45,7 @@ def morph_operations(img_arr):
     return img_arr
 
 def compute_top_layer(img_arr):
-    img_arr = bool_mask(img_arr)
+    # img_arr = bool_mask(img_arr)
     img_arr = morph_operations(img_arr)
     rows, columns = np.where(img_arr)
     top_layer_idxs = pd.DataFrame({'row': rows, 'column': columns}).groupby('column').row.min()
@@ -147,18 +148,17 @@ def get_projection_image(img_data):
     projection_image = img_data.mean(axis=1)
     return projection_image
 
-def get_slab_image(img_data, ilm_surface_df):
-    slab_width_microns = 52
+def get_slab_image(img_data, ilm_surface, slab_width_microns=52):
     slab_width = np.ceil(slab_width_microns / MICRONS_PER_PIXEL)
 
     # copy array
-    slab_array = np.full(ilm_surface_df.shape, np.nan)
+    slab_array = np.full(ilm_surface.shape, np.nan)
 
     # loop through x, y coords
     for x in range(0,200):
         for y in range(0,200):
             # at each x, y set values outside of slab to nan
-            ilm_idx = ilm_surface_df.values[x,y]
+            ilm_idx = ilm_surface[x,y]
             if np.isnan(ilm_idx):
                 continue
 
