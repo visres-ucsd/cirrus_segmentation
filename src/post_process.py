@@ -148,7 +148,7 @@ def get_projection_image(img_data):
     projection_image = img_data.mean(axis=1)
     return projection_image
 
-def get_slab_image(img_data, ilm_surface, slab_width_microns=52):
+def get_slab_image(img_data, ilm_surface, slab_width_microns=52, slab_RPE_buffer=0):
     slab_width = np.ceil(slab_width_microns / MICRONS_PER_PIXEL)
 
     # copy array
@@ -159,6 +159,8 @@ def get_slab_image(img_data, ilm_surface, slab_width_microns=52):
         for y in range(0,200):
             # at each x, y set values outside of slab to nan
             ilm_idx = ilm_surface[x,y]
+            if slab_RPE_buffer:
+                ilm_idx -= slab_RPE_buffer
             if np.isnan(ilm_idx):
                 continue
 

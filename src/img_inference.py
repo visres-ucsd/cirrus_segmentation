@@ -16,6 +16,31 @@ from keras_segmentation.predict import visualize_segmentation
 
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
+def register_bscans(img_data):
+    offsets = [np.array([0.,0.])]
+    for i in range(199):
+        bscan = img_data[i]
+        next_bscan = img_data[i+1]
+        shift, error, diffphase = skimage.registration.phase_cross_correlation(bscan, next_bscan, normalization=None)
+        offsets.append(shift)
+
+    offsets = np.stack(offsets).cumsum(axis=0)
+    
+    return offsets
+
+def align_bscans(img_data):
+    offsets = register_bscans(img_data)
+    # offsets -= offsets[99]
+    offsets -= np.array([offsets.max(axis=0)[0], 0])
+    # offsets[:,1] = 0
+
+    adjusted_image = []
+    for bscan, offset in zip(img_data, offsets):
+        bscan = scipy.ndimage.shift(bscan, offset)#(offset[1], offset[0]))
+        adjusted_image.append(bscan)
+
+    return np.stack(adjusted_image)
+
 def _prep_img(img_data, ref_model):
     '''
     Prepares img data for prediction.
@@ -65,12 +90,14 @@ def _segmentation_to_surface(segmentation):
     ]).T
     return surface
 
-def process_from_img(img_path, ilm_model, rnfl_model):
+def process_from_img(img_path, ilm_model, rnfl_model, align=False):
     verbose = 0
     pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
     scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
     
     img_data = utils.load_numpy_onh_cube_img(img_path)
+    if align:
+        img_data = align_bscans(img_data)
 
     x, x_left, x_right = _prep_img(img_data, rnfl_model)
 

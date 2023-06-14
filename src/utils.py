@@ -1,11 +1,35 @@
-
-
 import numpy as np
 import pandas as pd
 import base64
 import json
 import cv2
+import io
 from pathlib import Path
+
+def compress_array(array):
+    file_obj = io.BytesIO()
+    np.savez_compressed(file_obj, array=array)
+    compressed_bytes = file_obj.getvalue()
+    compressed_string = compressed_bytes.decode('ISO-8859-1')
+    return compressed_string
+
+def decompress_array(compressed_string):    
+    compressed_bytes = compressed_string.encode('ISO-8859-1')
+    file_obj = io.BytesIO(compressed_bytes)
+    loaded = np.load(file_obj)
+    array = loaded['array']
+    return array
+
+def save_json_dict_savez(json_dict, outfp):
+    def _jsonify_obj(obj):
+        if isinstance(obj, np.ndarray):
+            return compress_array(obj)
+        elif isinstance(obj, pd.DataFrame):
+            return base64_enc_df(obj)
+        else:
+            return obj
+        
+    json_dict.apply(_jsonify_obj).to_json(outfp)
 
 def save_json_dict(json_dict, outfp):
     def _jsonify_obj(obj):

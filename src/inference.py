@@ -106,4 +106,3 @@ def main():
 if __name__=='__main__':
     main()
 
-# shasum -a 256 data_wd/test_pngs_out/ILM/test_pngs/PSD1087/PSD1087OD_2-18-2010_16-7-27/sn5279_1_L.jpg data_wd/ILM_masks/PSD1087/PSD1087OD_2-18-2010_16-7-27/sn5279_1_L.jpg

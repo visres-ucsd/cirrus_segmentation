@@ -1,3 +1,4 @@
+import pickle
 import pandas as pd
 import numpy as np
 import scipy
@@ -10,7 +11,7 @@ from pathlib import Path
 import json
 from post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
     BASE_DIAM, get_stitched_image, compute_top_layer, \
-    morph_operations, bool_mask, surface_smoothing
+    morph_operations, bool_mask, surface_smoothing, get_slab_image
 from utils import load_json_collection
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
@@ -230,10 +231,33 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # circle_ax.get_xaxis().set_visible(False)
     # circle_ax.get_yaxis().set_visible(False)
 
+    # load cirrus cmap
+    with open('cirrus_cmap.pkl', 'rb') as handle:
+        cirrus_cmap = pickle.load(handle)
+
+    # ad-hoc en-face image flip (may need to remove once added to post-processing code)
+    for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
+        json_collection[key] = np.flip(json_collection[key], axis=1)
+
+    # proj_image_lim = np.percentile(json_collection.projection_image, [10, 90])
+    # slab_lim = json_collection.en_face_slab_image.flatten()
+    # slab_lim = slab_lim[~np.isnan(slab_lim)]
+    # slab_lim = np.percentile(slab_lim, [5, 95])
+
+    def np_replace_values(arr, value, new_value):
+        arr = arr.copy()
+        arr[arr==value] = new_value
+        return arr
+
+    # json_collection.projection_image[np.where(json_collection.en_face_slab_image==0)] = np.nan
+    # json_collection.en_face_slab_image[np.where(json_collection.en_face_slab_image==0)] = np.nan
+
     # show projection, slab, and rnfl thickness maps
-    proj_ax.imshow(json_collection.projection_image, cmap='gray', aspect='equal')
-    slab_ax.imshow(json_collection.en_face_slab_image, cmap='gray', aspect='equal')
-    rnfl_ax.imshow(json_collection.rnfl_thickness_values, aspect='equal', cmap='jet', vmin=0, vmax=200)
+    plotting_proj_img = np_replace_values(json_collection.projection_image, 0, np.nan)
+    plotting_slab_img = np_replace_values(json_collection.en_face_slab_image, 0, np.nan)
+    proj_ax.imshow(plotting_proj_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
+    slab_ax.imshow(plotting_slab_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
+    rnfl_ax.imshow(json_collection.rnfl_thickness_values, aspect='equal', cmap=cirrus_cmap, vmin=0, vmax=350)
 
     proj_ax.set_title('Projection Image', y=-0.1)
     slab_ax.set_title('En Face Slab Image', y=-0.1)
@@ -267,7 +291,10 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
 
     fig.tight_layout()
     if savefig: # save figure, return nothing
-        fig_outpath = Path('data_wd').joinpath('plots', json_collection.scan_outname+'_comb_plots.png')
+        if isinstance(savefig, str):
+            fig_outpath = Path(savefig)
+        else:
+            fig_outpath = Path('data_wd').joinpath('plots', 'comb_plots', json_collection.scan_outname+'.png')
         fig_outpath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
         plt.close(fig)
@@ -296,3 +323,41 @@ def visualize_bscan(json_collection, bscan_idx, visualize_layers=False, smoothin
     ax.legend()
     if ax is None:
         return ax
+    
+def viz_multi_slab(json_collection):
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    
+    slab_52 = get_slab_image(
+        json_collection.cube_data, json_collection.ILM_y,
+        slab_width_microns=52, slab_RPE_buffer=0)
+
+    slab_70 = get_slab_image(
+        json_collection.cube_data, json_collection.ILM_y,
+        slab_width_microns=70, slab_RPE_buffer=0)
+
+    slab_62 = get_slab_image(
+        json_collection.cube_data, json_collection.ILM_y,
+        slab_width_microns=62, slab_RPE_buffer=10)
+
+    ax1.imshow(slab_52, cmap='gray')
+    ax2.imshow(slab_70, cmap='gray')
+    ax3.imshow(slab_62, cmap='gray')
+
+    for ax in (ax1, ax2, ax3):
+        ax.axis('off')
+
+    ax1.set_title('Slab image (52µm)')
+    ax2.set_title('Slab image (70µm)')
+    ax3.set_title('Slab image (10µm-62µm)')
+
+    fig.suptitle(json_collection.scan_outname)
+
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.subplots_adjust(top=0.85)
+
+    fig_outpath = Path('data_wd').joinpath('plots', 'slab_comparisons', json_collection.scan_outname)
+    fig_outpath.parent.mkdir(exist_ok=True, parents=True)
+    fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
+    plt.close(fig)
+
+    return

@@ -2,10 +2,12 @@ xCenter=101;
 yCenter=101;
 
 se3 = strel('disk', 1);
-ss=8;
+ss=75;
+% ss=8;
 
 M=-1*pi/2:(2*pi)/ss:1.5*pi;
-K=[35 80 ];
+K=[40 50];
+% K=[35 80 ];
 H=1:ss*length(K);
 ind=0;
 
@@ -42,5 +44,5 @@ for k=1:length(K)
     end
 end
 HE_mask = Mask2(1:10:end,:)';
-
-writematrix(Mask2, 'sector_masks.csv');
+HE_mask
+% writematrix(Mask2, 'sector_masks.csv');
