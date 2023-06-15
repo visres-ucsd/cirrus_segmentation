@@ -236,8 +236,8 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         cirrus_cmap = pickle.load(handle)
 
     # ad-hoc en-face image flip (may need to remove once added to post-processing code)
-    for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
-        json_collection[key] = np.flip(json_collection[key], axis=1)
+    # for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
+    #     json_collection[key] = np.flip(json_collection[key], axis=1)
 
     # proj_image_lim = np.percentile(json_collection.projection_image, [10, 90])
     # slab_lim = json_collection.en_face_slab_image.flatten()

@@ -120,6 +120,10 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False):
     ilm_surface = _segmentation_to_surface(ilm_out)
     rnfl_surface = _segmentation_to_surface(rnfl_out)
 
+    # flip to correct orientation
+    ilm_surface = np.flip(ilm_surface, axis=1)
+    rnfl_surface = np.flip(rnfl_surface, axis=1)
+
     # compute rnfl thickness
     rnfl_thickness = rnfl_surface - ilm_surface
     rnfl_thickness *= MICRONS_PER_PIXEL # convert to microns
