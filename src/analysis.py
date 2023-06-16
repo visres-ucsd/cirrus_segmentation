@@ -11,7 +11,7 @@ from pathlib import Path
 import json
 from post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
     BASE_DIAM, get_stitched_image, compute_top_layer, \
-    morph_operations, bool_mask, surface_smoothing, get_slab_image
+    morph_operations, bool_mask, surface_smoothing, get_slab_image, find_onh_center
 from utils import load_json_collection
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
@@ -236,8 +236,11 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         cirrus_cmap = pickle.load(handle)
 
     # ad-hoc en-face image flip (may need to remove once added to post-processing code)
-    # for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
-    #     json_collection[key] = np.flip(json_collection[key], axis=1)
+    for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
+        json_collection[key] = np.flip(json_collection[key], axis=1)
+
+    # recompute scan center for display
+    json_collection['scan_center'] = find_onh_center(json_collection.rnfl_thickness_values)
 
     # proj_image_lim = np.percentile(json_collection.projection_image, [10, 90])
     # slab_lim = json_collection.en_face_slab_image.flatten()

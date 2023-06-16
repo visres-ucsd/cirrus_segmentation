@@ -32,7 +32,7 @@ def align_bscans(img_data):
     offsets = register_bscans(img_data)
     # offsets -= offsets[99]
     offsets -= np.array([offsets.max(axis=0)[0], 0])
-    # offsets[:,1] = 0
+    offsets[:,1] = 0
 
     adjusted_image = []
     for bscan, offset in zip(img_data, offsets):
@@ -51,7 +51,7 @@ def _prep_img(img_data, ref_model):
         bscan = get_image_array(bscan, ref_model.input_width, ref_model.input_height, ordering=IMAGE_ORDERING)
         return bscan
     
-    img_data_flipped = np.flip(img_data) # right side up
+    img_data_flipped = np.flip(img_data, axis=1) # right side up
     # bisect bscans into left and right
     bisect_idx = img_data_flipped.shape[2]//2
     bscans_left = img_data_flipped[:,:,:bisect_idx]
@@ -121,8 +121,8 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False):
     rnfl_surface = _segmentation_to_surface(rnfl_out)
 
     # flip to correct orientation
-    ilm_surface = np.flip(ilm_surface, axis=1)
-    rnfl_surface = np.flip(rnfl_surface, axis=1)
+    ilm_surface = np.flip(ilm_surface)#, axis=1)
+    rnfl_surface = np.flip(rnfl_surface)#, axis=1)
 
     # compute rnfl thickness
     rnfl_thickness = rnfl_surface - ilm_surface
