@@ -207,7 +207,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # print('Plotting data...')
     # show derived circle scan
     circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
-    circle_ax.set_title('Derived Circumpalliary Circle Scan')
+    circle_ax.set_title('Derived circumpapillary Circle Scan')
 
     # plot ilm/rnfl surfaces
     # ilm_x_res = np.linspace(0, der_circle_scan.shape[1], der_ilm_surface.size)
@@ -240,7 +240,8 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         json_collection[key] = np.flip(json_collection[key], axis=1)
 
     # recompute scan center for display
-    json_collection['scan_center'] = find_onh_center(json_collection.rnfl_thickness_values)
+    json_collection['scan_center'][0] -= 2 * (json_collection['scan_center'][0] - 99)
+    # json_collection['scan_center'] = find_onh_center(json_collection.rnfl_thickness_values)
 
     # proj_image_lim = np.percentile(json_collection.projection_image, [10, 90])
     # slab_lim = json_collection.en_face_slab_image.flatten()
@@ -259,6 +260,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     plotting_proj_img = np_replace_values(json_collection.projection_image, 0, np.nan)
     plotting_slab_img = np_replace_values(json_collection.en_face_slab_image, 0, np.nan)
     proj_ax.imshow(plotting_proj_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
+    proj_ax.scatter(*json_collection['scan_center'], s=2, c='r')
     slab_ax.imshow(plotting_slab_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
     rnfl_ax.imshow(json_collection.rnfl_thickness_values, aspect='equal', cmap=cirrus_cmap, vmin=0, vmax=350)
 
@@ -267,7 +269,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     rnfl_ax.set_title('RNFL Thickness Map', y=-0.1)
 
     def cricle_xy(r,phi):
-        center_y, center_x = json_collection.scan_center
+        center_x, center_y = json_collection.scan_center
         return center_x + r*np.cos(phi), center_y + r*np.sin(phi)
     
     for ax in [proj_ax, slab_ax, rnfl_ax]:

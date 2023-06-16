@@ -16,6 +16,17 @@ from keras_segmentation.predict import visualize_segmentation
 
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
+ONH_CENTER_MAP = (
+    pd.read_csv(
+        '20220503_ADAGES-DIGS_CirrusOCT_OpticDisc_ALL.csv',
+        usecols=['PATIENT_ID', 'SITE', 'DATE_TIME',
+                 'OPTICDISC_ONHCENTER_X', 'OPTICDISC_ONHCENTER_Y'],
+        parse_dates=['DATE_TIME'])
+    .set_index(['PATIENT_ID', 'SITE', 'DATE_TIME'])
+    .apply(tuple, axis=1)
+)
+
+
 def register_bscans(img_data):
     offsets = [np.array([0.,0.])]
     for i in range(199):
@@ -131,7 +142,12 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False):
 
     proj_image = img_data.mean(axis=1)
     slab_image = post_process.get_slab_image(img_data, ilm_surface)
-    scan_center = post_process.find_onh_center(rnfl_thickness)
+    # scan_center = post_process.find_onh_center(rnfl_thickness)
+    scan_center = np.array(ONH_CENTER_MAP.loc[
+        pt_id[1:],
+        scan_eye,
+        pd.to_datetime(scan_date+'T'+scan_time.replace('-', ':'))
+    ])
     
     der_circle_scan, der_ilm_surface, der_rnfl_surface = post_process.make_derived_circle_scan(
         img_data, ilm_surface, rnfl_surface,
