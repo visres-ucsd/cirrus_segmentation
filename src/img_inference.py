@@ -23,8 +23,9 @@ ONH_CENTER_MAP = (
                  'OPTICDISC_ONHCENTER_X', 'OPTICDISC_ONHCENTER_Y'],
         parse_dates=['DATE_TIME'])
     .set_index(['PATIENT_ID', 'SITE', 'DATE_TIME'])
-    .apply(tuple, axis=1)
 )
+ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X -=  2 * (ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X - 99)
+ONH_CENTER_MAP = ONH_CENTER_MAP.apply(tuple, axis=1)
 
 
 def register_bscans(img_data):

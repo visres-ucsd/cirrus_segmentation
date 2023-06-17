@@ -202,7 +202,7 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
     coord_mask = np.logical_and(INNER_RADIUS < coord_dist, coord_dist < OUTER_RADIUS)
 
     # diameter 115px * pi ~= 361
-    anglular_resolution = 360 # (also converts to degrees easily)
+    anglular_resolution = 360 # also converts to degrees easily
     coor_atan = np.arctan2(coord_diff[:,:,0], coord_diff[:,:,1])
     angle_bins = np.linspace(coor_atan.min(), coor_atan.max(), anglular_resolution)
     angles_binned = np.digitize(coor_atan, bins=angle_bins).astype(float) - 1
