@@ -193,8 +193,8 @@ def make_derived_circle_scan(vol_data, ilm_surface, rnfl_surface, onh_center, mo
 
     # protect against onh_centers too far away from image center
     encounter_scan_boundary = (np.abs((onh_center - DEFAULT_EN_FACE_CENTER)) >= (100 - OUTER_RADIUS)).any()
-    if encounter_scan_boundary:
-        onh_center = DEFAULT_EN_FACE_CENTER
+    # if encounter_scan_boundary:
+    #     onh_center = DEFAULT_EN_FACE_CENTER
 
     coords = np.stack(np.meshgrid(range(200), range(200)), axis=2)
     coord_diff = coords - onh_center
