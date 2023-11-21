@@ -234,6 +234,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     # load cirrus cmap
     with open('cirrus_cmap.pkl', 'rb') as handle:
         cirrus_cmap = pickle.load(handle)
+        cirrus_cmap.set_bad('gray', 1.)
 
     # ad-hoc en-face image flip (may need to remove once added to post-processing code)
     for key in ['projection_image', 'en_face_slab_image', 'rnfl_thickness_values']:
@@ -262,6 +263,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
     proj_ax.imshow(plotting_proj_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
     proj_ax.scatter(*json_collection['scan_center'], s=2, c='r')
     slab_ax.imshow(plotting_slab_img, cmap='gray', aspect='equal')#, vmin=0, vmax=256)
+    # rnfl_ax.imshow(json_collection.rnfl_thickness_values * VERT_SCALE, aspect='equal', cmap=cirrus_cmap, vmin=0, vmax=350)
     rnfl_ax.imshow(json_collection.rnfl_thickness_values, aspect='equal', cmap=cirrus_cmap, vmin=0, vmax=350)
 
     proj_ax.set_title('Projection Image', y=-0.1)

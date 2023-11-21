@@ -14,6 +14,7 @@ from keras_segmentation.data_utils.data_loader import get_image_array, class_col
 from keras_segmentation.models.config import IMAGE_ORDERING
 from keras_segmentation.predict import visualize_segmentation
 
+from scipy.spatial import cKDTree
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
 ONH_CENTER_MAP = (
@@ -24,9 +25,35 @@ ONH_CENTER_MAP = (
         parse_dates=['DATE_TIME'])
     .set_index(['PATIENT_ID', 'SITE', 'DATE_TIME'])
 )
+ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X = ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X.apply(lambda x: x * 200 if x < 1 else x)
+ONH_CENTER_MAP.OPTICDISC_ONHCENTER_Y = ONH_CENTER_MAP.OPTICDISC_ONHCENTER_Y.apply(lambda x: x * 200 if x < 1 else x)
 ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X -=  2 * (ONH_CENTER_MAP.OPTICDISC_ONHCENTER_X - 99)
 ONH_CENTER_MAP = ONH_CENTER_MAP.apply(tuple, axis=1)
 
+SAMPLE_OCT_NOISE = np.load('sample_cirrus_noise.npy')
+
+def fill_nan_with_nearest_neighbor(arr):
+    # Convert the input array to a NumPy array if it's not already
+    arr = np.array(arr)
+    
+    # Create a mask of NaN values in the input array
+    nan_mask = np.isnan(arr)
+    
+    # Find the indices of NaN values
+    nan_indices = np.argwhere(nan_mask)
+    
+    # Find the indices of non-NaN values
+    non_nan_indices = np.argwhere(~nan_mask)
+    
+    # Create a KD-tree from the non-NaN values for efficient nearest neighbor search
+    tree = cKDTree(non_nan_indices)
+    
+    # Fill NaN values with their nearest neighbors
+    for nan_index in nan_indices:
+        _, nearest_index = tree.query(nan_index)
+        arr[nan_index[0], nan_index[1]] = arr[non_nan_indices[nearest_index][0], non_nan_indices[nearest_index][1]]
+    
+    return arr
 
 def register_bscans(img_data):
     offsets = [np.array([0.,0.])]
@@ -44,11 +71,14 @@ def align_bscans(img_data):
     offsets = register_bscans(img_data)
     # offsets -= offsets[99]
     offsets -= np.array([offsets.max(axis=0)[0], 0])
-    offsets[:,1] = 0
+    offsets = offsets.astype(int)
+    offsets[:,1] = 0 # dont apply offest in this axis
 
     adjusted_image = []
     for bscan, offset in zip(img_data, offsets):
         bscan = scipy.ndimage.shift(bscan, offset)#(offset[1], offset[0]))
+        if offset[0] < 0:
+            bscan[offset[0]:] = np.random.choice(SAMPLE_OCT_NOISE, size=bscan[offset[0]:].shape) # fill voids with noise
         adjusted_image.append(bscan)
 
     return np.stack(adjusted_image)
@@ -91,6 +121,9 @@ def _segmentation_to_surface(segmentation):
     surface = np.flip(segmentation.argmax(axis=1).astype(np.float32))
     surface[surface==0] = np.nan
     surface = skimage.transform.resize(surface * VERT_SCALE, (200, 200), preserve_range=True)
+    nan_mask = np.isnan(surface)
+    nan_indices = np.argwhere(nan_mask)
+    surface = fill_nan_with_nearest_neighbor(surface)
     # apply lowess
     surface = np.stack([
         lowess(line, list(range(line.size)), 0.05, is_sorted=True, missing='drop', return_sorted=False)
@@ -100,19 +133,11 @@ def _segmentation_to_surface(segmentation):
         lowess(line, list(range(line.size)), 0.05, is_sorted=True, missing='drop', return_sorted=False)
         for line in surface.T
     ]).T
+    for nan_index in nan_indices:
+        surface[nan_index[0], nan_index[1]] = np.nan
     return surface
 
-def process_from_img(img_path, ilm_model, rnfl_model, align=False):
-    verbose = 0
-    pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
-    scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
-    
-    img_data = utils.load_numpy_onh_cube_img(img_path)
-    if align:
-        img_data = align_bscans(img_data)
-
-    x, x_left, x_right = _prep_img(img_data, rnfl_model)
-
+def _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbose=0):
     # predict rnfl segmentation
     rnfl_out_left = _segmentation_prediction(x_left, rnfl_model, verbose=verbose)
     rnfl_out_right = _segmentation_prediction(x_right, rnfl_model, verbose=verbose)
@@ -124,9 +149,30 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False):
     # join left and right segmentation masks
     ilm_out = np.concatenate([ilm_out_left, np.flip(ilm_out_right, axis=2)], axis=2)
     rnfl_out = np.concatenate([rnfl_out_left, np.flip(rnfl_out_right, axis=2)], axis=2)
+    return ilm_out, rnfl_out
+    
+
+def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=True):
+    verbose = 0
+    pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
+    scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
+    
+    img_data = utils.load_numpy_onh_cube_img(img_path)
+    if align:
+        img_data = align_bscans(img_data)
+
+    x, x_left, x_right = _prep_img(img_data, rnfl_model)
+
+    if split_bscans:
+        ilm_out, rnfl_out = _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbose=verbose)
+    else:
+        ilm_out = _segmentation_prediction(x, ilm_model, verbose=verbose)
+        rnfl_out = _segmentation_prediction(x, rnfl_model, verbose=verbose)
 
     ilm_out = process_segmentation(ilm_out)
     rnfl_out = process_segmentation(rnfl_out)
+
+    # print(ilm_out.shape, rnfl_out.shape)
 
     # compute/process surface
     ilm_surface = _segmentation_to_surface(ilm_out)
@@ -142,7 +188,7 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False):
     rnfl_thickness[rnfl_thickness<=0] = np.nan
 
     proj_image = img_data.mean(axis=1)
-    slab_image = post_process.get_slab_image(img_data, ilm_surface)
+    slab_image = post_process.get_slab_image(img_data, ilm_surface, slab_width_microns=70)
     # scan_center = post_process.find_onh_center(rnfl_thickness)
     scan_center = np.array(ONH_CENTER_MAP.loc[
         pt_id[1:],
