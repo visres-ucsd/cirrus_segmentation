@@ -8,11 +8,12 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator
 from pathlib import Path
+from tqdm import tqdm
 import json
-from post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
+from src.post_process import EXPECTED_SHAPE, VERT_SCALE, INNER_RADIUS, OUTER_RADIUS, \
     BASE_DIAM, get_stitched_image, compute_top_layer, \
     morph_operations, bool_mask, surface_smoothing, get_slab_image, find_onh_center
-from utils import load_json_collection
+from src.utils import load_json_collection
 
 def plot_after_2d_med_filter(path, layer, axes=None, savefig=True, savefig_path=None):
     def get_ilm_rnfl_surfaces(path):
@@ -206,7 +207,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
 
     # print('Plotting data...')
     # show derived circle scan
-    circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')
+    circle_ax.imshow(der_circle_scan, cmap='gray', aspect='auto')#, vmin=0, vmax=255)
     circle_ax.set_title('Derived circumpapillary Circle Scan')
 
     # plot ilm/rnfl surfaces
@@ -324,12 +325,28 @@ def visualize_bscan(json_collection, bscan_idx, visualize_layers=False, smoothin
     
     if ax is None:
         fig, ax = plt.subplots(figsize=(10,10))
-    ax.imshow(bscan, aspect='auto', cmap='gray')
+    ax.imshow(bscan, aspect='auto', cmap='gray', vmin=0, vmax=255)
     ax.plot(ILM_y[bscan_idx], color='c', label='ILM')
     ax.plot(RNFL_y[bscan_idx], color='r', label='RNFL')
     ax.legend()
     if ax is None:
         return ax
+
+def animate_bscans(json_collection):
+    if isinstance(json_collection, str):
+        json_collection = Path(json_collection)
+        json_collection = load_json_collection(json_collection)
+    for layer in tqdm(range(200)):
+        fig = visualize_bscan(json_collection, layer, visualize_layers=True)
+        plt.savefig(f'temp/anim_layer_{layer:03d}.png', bbox_inches='tight', facecolor='w')
+        plt.close(fig)
+    
+    outfn = os.path.join('anim', json_collection.scan_outname+"_seg_animation.mp4")
+    Path(outfn).parent.mkdir(exist_ok=True, parents=True)
+    ffmpeg_cmd = f'ffmpeg -framerate 10 -pattern_type glob -i "temp/anim_layer_*.png" -c:v libx264 ' \
+        f'-pix_fmt yuv420p -vf pad="width=ceil(iw/2)*2:height=ceil(ih/2)*2" -y {outfn}'
+    # print(ffmpeg_cmd)
+    os.system(ffmpeg_cmd)
     
 def viz_multi_slab(json_collection):
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))

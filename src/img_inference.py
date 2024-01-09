@@ -4,6 +4,7 @@ import cv2
 import skimage
 import scipy
 from pathlib import Path
+import pywt
 
 import utils
 import post_process
@@ -15,7 +16,10 @@ from keras_segmentation.models.config import IMAGE_ORDERING
 from keras_segmentation.predict import visualize_segmentation
 
 from scipy.spatial import cKDTree
+from skimage.restoration import denoise_wavelet
 from statsmodels.nonparametric.smoothers_lowess import lowess
+
+CLAHE = cv2.createCLAHE(clipLimit=2)
 
 ONH_CENTER_MAP = (
     pd.read_csv(
@@ -68,6 +72,8 @@ def register_bscans(img_data):
     return offsets
 
 def align_bscans(img_data):
+    median, std = np.median(img_data), np.std(img_data)
+    sample_noise = np.sort(img_data[:,-5:,:].flatten())[:180000]
     offsets = register_bscans(img_data)
     # offsets -= offsets[99]
     offsets -= np.array([offsets.max(axis=0)[0], 0])
@@ -78,7 +84,9 @@ def align_bscans(img_data):
     for bscan, offset in zip(img_data, offsets):
         bscan = scipy.ndimage.shift(bscan, offset)#(offset[1], offset[0]))
         if offset[0] < 0:
-            bscan[offset[0]:] = np.random.choice(SAMPLE_OCT_NOISE, size=bscan[offset[0]:].shape) # fill voids with noise
+            # bscan[offset[0]:] = 0 #np.random.normal(median, std, size=bscan[offset[0]:].shape)
+            # bscan[offset[0]:] = np.random.choice(SAMPLE_OCT_NOISE, size=bscan[offset[0]:].shape) # fill voids with noise
+            bscan[offset[0]:] = np.random.choice(sample_noise, size=bscan[offset[0]:].shape) # fill voids with noise
         adjusted_image.append(bscan)
 
     return np.stack(adjusted_image)
@@ -89,6 +97,7 @@ def _prep_img(img_data, ref_model):
     '''
     def prep_bscan(bscan):
         # bscan = cv2.resize(img_data[0], (768, 496))
+        bscan = CLAHE.apply(bscan)
         bscan = cv2.cvtColor(bscan, cv2.COLOR_GRAY2RGB)
         bscan = get_image_array(bscan, ref_model.input_width, ref_model.input_height, ordering=IMAGE_ORDERING)
         return bscan
@@ -124,7 +133,7 @@ def _segmentation_to_surface(segmentation):
     nan_mask = np.isnan(surface)
     nan_indices = np.argwhere(nan_mask)
     surface = fill_nan_with_nearest_neighbor(surface)
-    # apply lowess
+    # apply lowess smooting
     surface = np.stack([
         lowess(line, list(range(line.size)), 0.05, is_sorted=True, missing='drop', return_sorted=False)
         for line in surface
@@ -133,8 +142,9 @@ def _segmentation_to_surface(segmentation):
         lowess(line, list(range(line.size)), 0.05, is_sorted=True, missing='drop', return_sorted=False)
         for line in surface.T
     ]).T
-    for nan_index in nan_indices:
+    for nan_index in nan_indices: # replace nans
         surface[nan_index[0], nan_index[1]] = np.nan
+    # surface = scipy.ndimage.median_filter(surface, size=7) # median filter
     return surface
 
 def _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbose=0):
@@ -158,8 +168,19 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=
     scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
     
     img_data = utils.load_numpy_onh_cube_img(img_path)
+    proj_image = img_data.mean(axis=1)
     if align:
         img_data = align_bscans(img_data)
+    raw_img_data = img_data.copy()
+    img_data = denoise_wavelet(
+        img_data,
+        sigma=np.std(img_data),
+        wavelet='bior4.4'
+    )
+    img_data = scipy.ndimage.median_filter(img_data, size=(5,1,1))
+    img_data = (img_data * 255).astype(np.uint8)
+    # img_data = scipy.ndimage.gaussian_filter(img_data, sigma=(1,0,0))
+    # img_data = CLAHE.apply(img_data.reshape((200,204800))).reshape((200,1024,200))
 
     x, x_left, x_right = _prep_img(img_data, rnfl_model)
 
@@ -187,17 +208,15 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=
     rnfl_thickness *= MICRONS_PER_PIXEL # convert to microns
     rnfl_thickness[rnfl_thickness<=0] = np.nan
 
-    proj_image = img_data.mean(axis=1)
-    slab_image = post_process.get_slab_image(img_data, ilm_surface, slab_width_microns=70)
+    
+    slab_image = post_process.get_slab_image(raw_img_data, ilm_surface, slab_width_microns=52)
     # scan_center = post_process.find_onh_center(rnfl_thickness)
-    scan_center = np.array(ONH_CENTER_MAP.loc[
-        pt_id[1:],
-        scan_eye,
-        pd.to_datetime(scan_date+'T'+scan_time.replace('-', ':'))
-    ])
+    scan_center = np.array(ONH_CENTER_MAP.get(
+        (pt_id[1:], scan_eye, pd.to_datetime(scan_date+'T'+scan_time.replace('-', ':')))
+    , (99,99)))
     
     der_circle_scan, der_ilm_surface, der_rnfl_surface = post_process.make_derived_circle_scan(
-        img_data, ilm_surface, rnfl_surface,
+        raw_img_data, ilm_surface, rnfl_surface,
         scan_center, scan_eye
     )
 
@@ -223,6 +242,6 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=
         'RNFL_y': rnfl_surface,
     }
 
-    json_dict['cube_data'] = img_data
+    json_dict['cube_data'] = raw_img_data
     
     return pd.Series(json_dict)

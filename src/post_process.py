@@ -10,7 +10,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 import argparse
 import scipy
 import json
-from utils import base64_enc_df, b64encode_numpy, image_to_base64
+from src.utils import base64_enc_df, b64encode_numpy, image_to_base64
 
 MASK_RGB = np.array([133, 248, 208])
 DIST_THRESHOLD = 5000
