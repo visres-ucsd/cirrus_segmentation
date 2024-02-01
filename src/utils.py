@@ -110,13 +110,30 @@ def read_img_base64(data_str, dtype=np.uint8):
     img = cv2.imdecode(data, flags=0)
     return img
 
+def load_partial_json_collection(json_path, decode_cube=False):
+    '''Loads a partial (unfinished) JSON collection of OCT segmentation outputs.
+
+    Use decode_cube=True if decoding raw cube data is necessary.
+    '''
+    with open(json_path) as json_handle:
+        json_collection = json.load(json_handle)
+
+    for key in ['ILM_seg', 'RNFL_seg']:
+        json_collection[key] = b64decode_numpy(json_collection[key])
+
+    json_collection['cube_data'] = b64decode_numpy(json_collection['cube_data'])
+
+    json_collection = pd.Series(json_collection)
+    return json_collection
+
 def load_json_collection(json_path):
-    '''Loads a JSON collection of OCT outputs.'''
+    '''Loads a JSON collection of OCT segmentation outputs.'''
     with open(json_path) as json_handle:
         json_collection = json.load(json_handle)
     
-    for key in ['rnfl_thickness_values', 'ILM_y', 'RNFL_y']:
-        json_collection[key] = b64decode_numpy(json_collection[key])
+    for key in ['rnfl_thickness_values', 'ILM_y', 'RNFL_y', 'ILM_seg', 'RNFL_seg']:
+        if key in json_collection:
+            json_collection[key] = b64decode_numpy(json_collection[key])
 
     if not 'jpg_encoded' in json_collection: # assume jpg encoding if missing
         json_collection['jpg_encoded'] = False

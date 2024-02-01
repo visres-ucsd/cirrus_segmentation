@@ -306,6 +306,7 @@ def draw_derived_en_face_imgs(json_collection, savefig=False):
         fig_outpath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(str(fig_outpath), bbox_inches='tight', facecolor='w', dpi=600)
         plt.close(fig)
+        del fig
         return
     return fig
 

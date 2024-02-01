@@ -91,13 +91,14 @@ def align_bscans(img_data):
 
     return np.stack(adjusted_image)
 
-def _prep_img(img_data, ref_model):
+def _prep_img(img_data, ref_model, use_CLAHE):
     '''
     Prepares img data for prediction.
     '''
     def prep_bscan(bscan):
         # bscan = cv2.resize(img_data[0], (768, 496))
-        bscan = CLAHE.apply(bscan)
+        if use_CLAHE:
+            bscan = CLAHE.apply(bscan)
         bscan = cv2.cvtColor(bscan, cv2.COLOR_GRAY2RGB)
         bscan = get_image_array(bscan, ref_model.input_width, ref_model.input_height, ordering=IMAGE_ORDERING)
         return bscan
@@ -160,9 +161,114 @@ def _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbo
     ilm_out = np.concatenate([ilm_out_left, np.flip(ilm_out_right, axis=2)], axis=2)
     rnfl_out = np.concatenate([rnfl_out_left, np.flip(rnfl_out_right, axis=2)], axis=2)
     return ilm_out, rnfl_out
+
+
+def segmentation_prep(img_path, align=True):
+    img_data = utils.load_numpy_onh_cube_img(img_path)
+    if align:
+        img_data = align_bscans(img_data)
+    raw_img_data = img_data.copy()
+    img_data = denoise_wavelet(
+        img_data,
+        sigma=np.std(img_data),
+        wavelet='bior4.4'
+    )
+    img_data = scipy.ndimage.median_filter(img_data, size=(5,1,1))
+    img_data = (img_data * 255).astype(np.uint8)
+
+    data_dict = dict(
+        img_data=img_data,
+        raw_img_data=raw_img_data,
+        img_path=img_path
+    )
+    return data_dict
+
+def inference_step_only(data_dict, ilm_model, rnfl_model, split_bscans=True, use_CLAHE=False):
+    verbose = 0
+
+    img_data = data_dict['img_data']
+    raw_img_data = data_dict['raw_img_data']
+    img_path = data_dict['img_path']
+    
+    pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
+    scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
+
+    x, x_left, x_right = _prep_img(img_data, rnfl_model, use_CLAHE)
+
+    if split_bscans:
+        ilm_out, rnfl_out = _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbose=verbose)
+    else:
+        ilm_out = _segmentation_prediction(x, ilm_model, verbose=verbose)
+        rnfl_out = _segmentation_prediction(x, rnfl_model, verbose=verbose)
+
+    json_dict = {
+        'img_path': str(img_path),
+        'pt_id': pt_id,
+        'scan_eye': scan_eye,
+        'scan_type': scan_type,
+        'scan_date': scan_date,
+        'scan_time': scan_time,
+        'scan_outname': scan_outname,
+        'ILM_seg': ilm_out,
+        'RNFL_seg': rnfl_out,
+    }
+
+    json_dict['cube_data'] = raw_img_data
+    
+    return pd.Series(json_dict)
+
+def postprocess_segmentation_step_only(json_collection):
+    if not isinstance(json_collection, (pd.Series, dict)):
+        json_collection = load_json_collection(json_collection)
+
+    pt_id, scan_eye, scan_time, scan_date = json_collection.pt_id, json_collection.scan_eye, json_collection.scan_time, json_collection.scan_date
+    proj_image = json_collection.cube_data.mean(axis=1)
+
+    ilm_out = json_collection.ILM_seg
+    rnfl_out = json_collection.RNFL_seg
+
+    ilm_out = process_segmentation(ilm_out)
+    rnfl_out = process_segmentation(rnfl_out)
+
+    # compute/process surface
+    ilm_surface = _segmentation_to_surface(ilm_out)
+    rnfl_surface = _segmentation_to_surface(rnfl_out)
+
+    # flip to correct orientation
+    ilm_surface = np.flip(ilm_surface)#, axis=1)
+    rnfl_surface = np.flip(rnfl_surface)#, axis=1)
+
+    # compute rnfl thickness
+    rnfl_thickness = rnfl_surface - ilm_surface
+    rnfl_thickness *= MICRONS_PER_PIXEL # convert to microns
+    rnfl_thickness[rnfl_thickness<=0] = np.nan
+
+    slab_image = post_process.get_slab_image(json_collection.cube_data, ilm_surface, slab_width_microns=52)
+    scan_center_idx = (pt_id[1:], scan_eye, pd.to_datetime(scan_date+'T'+scan_time.replace('-', ':')))
+    scan_center = np.array(ONH_CENTER_MAP.get(scan_center_idx, (99,99)))
+    
+    der_circle_scan, der_ilm_surface, der_rnfl_surface = post_process.make_derived_circle_scan(
+        json_collection.cube_data, ilm_surface, rnfl_surface,
+        scan_center, scan_eye
+    )
+
+    derived_circle_segmentation = pd.concat(
+        {'ILM_y': der_ilm_surface, 'RNFL_y': der_rnfl_surface}
+    , axis=1)
+
+    json_collection['scan_center'] = list(scan_center)
+    json_collection['derived_circle_scan'] = der_circle_scan
+    json_collection['derived_circle_segmentation'] = derived_circle_segmentation
+    json_collection['projection_image'] = proj_image
+    json_collection['en_face_slab_image'] = slab_image
+    json_collection['rnfl_thickness_values'] = rnfl_thickness
+    json_collection['ILM_y'] = ilm_surface
+    json_collection['RNFL_y'] = rnfl_surface
+    
+    return json_collection
     
 
-def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=True):
+def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=True, use_CLAHE=True):
     verbose = 0
     pt_id, scan_type, scan_date, scan_time, scan_eye, _, _, _ = Path(img_path).name.split('_')
     scan_outname = '_'.join([pt_id+scan_eye, scan_date, scan_time])
@@ -182,7 +288,7 @@ def process_from_img(img_path, ilm_model, rnfl_model, align=False, split_bscans=
     # img_data = scipy.ndimage.gaussian_filter(img_data, sigma=(1,0,0))
     # img_data = CLAHE.apply(img_data.reshape((200,204800))).reshape((200,1024,200))
 
-    x, x_left, x_right = _prep_img(img_data, rnfl_model)
+    x, x_left, x_right = _prep_img(img_data, rnfl_model, use_CLAHE)
 
     if split_bscans:
         ilm_out, rnfl_out = _split_segmentation_prediction(x_left, x_right, ilm_model, rnfl_model, verbose=verbose)
